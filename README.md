@@ -21,6 +21,28 @@ flash sale. Runs free on GitHub Actions, stdlib Python only.
    First run seeds `seen.json` with current posts; alerts fire only
    for posts published after that.
 
+## Verifying it works
+
+- **Did a run succeed?** Actions tab > "Delta award sale watch". A green
+  check is a clean run. The "Check feeds and alert" step prints either
+  `no new Delta sale posts` or how many alerts it sent.
+- **Is the state persisting?** `seen.json` should exist at the repo root,
+  with `chore: update seen items` commits from `delta-watch-bot` as the
+  feeds churn.
+- **Are scheduled runs happening?** Runs triggered by the cron are labelled
+  with the schedule rather than a person's avatar. GitHub commonly delays
+  them 5-30 minutes, and can skip a slot entirely when its runners are
+  busy - harmless for a sale that lasts ~72 hours.
+- **Will email actually reach me?** Don't wait for a real sale to find out.
+  Actions tab > Run workflow > tick **"Send a test email to verify SMTP,
+  then stop"**. It sends one test message to `ALERT_TO` and exits without
+  touching `seen.json`. If the app password is wrong the run fails on that
+  step with the SMTP error.
+
+Quiet inboxes are the normal state: the baseline run is silent by design,
+and later runs only email when a post matches both the Delta and the
+sale patterns.
+
 ## Tuning
 
 - **Frequency:** edit the cron in the workflow. Every 3 hours:
