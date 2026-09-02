@@ -64,35 +64,63 @@ def matches(title: str, desc: str) -> bool:
     return bool(DELTA.search(blob) and SALE.search(blob))
 
 
-def send_email(hits: list) -> None:
+def _send(subject: str, body: str) -> None:
     user = os.environ["SMTP_USER"]
     password = os.environ["SMTP_PASS"]
-    to = os.environ.get("ALERT_TO", user)
-    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.environ.get("SMTP_PORT", "465"))
+    # A secret that exists but is empty arrives as "", which os.environ.get
+    # would hand back instead of the default, so fall back on falsiness.
+    to = os.environ.get("ALERT_TO") or user
+    host = os.environ.get("SMTP_HOST") or "smtp.gmail.com"
+    port = int(os.environ.get("SMTP_PORT") or "465")
 
     msg = EmailMessage()
-    n = len(hits)
-    msg["Subject"] = f"Delta award sale alert: {n} new post{'s' if n > 1 else ''}"
+    msg["Subject"] = subject
     msg["From"] = user
     msg["To"] = to
-    lines = ["New Delta award-sale coverage spotted:\n"]
-    for title, link in hits:
-        lines.append(f"- {title}\n  {link}\n")
-    lines.append(
-        "\nReminder: NYC profile is JFK/LGA to Europe/Asia/South America, "
-        "Main Cabin or better. Flash sales usually last ~72 hours — check "
-        "delta.com/us/en/flight-deals/flash-sale and price it in cents per "
-        "mile (cash / miles x 100; 1.2+ good, 1.5+ book it)."
-    )
-    msg.set_content("\n".join(lines))
+    msg.set_content(body)
 
     with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context()) as s:
         s.login(user, password)
         s.send_message(msg)
 
 
+PROFILE_REMINDER = (
+    "\nReminder: NYC profile is JFK/LGA to Europe/Asia/South America, "
+    "Main Cabin or better. Flash sales usually last ~72 hours \u2014 check "
+    "delta.com/us/en/flight-deals/flash-sale and price it in cents per "
+    "mile (cash / miles x 100; 1.2+ good, 1.5+ book it)."
+)
+
+
+def send_email(hits: list) -> None:
+    n = len(hits)
+    lines = ["New Delta award-sale coverage spotted:\n"]
+    for title, link in hits:
+        lines.append(f"- {title}\n  {link}\n")
+    lines.append(PROFILE_REMINDER)
+    _send(
+        f"Delta award sale alert: {n} new post{'s' if n > 1 else ''}",
+        "\n".join(lines),
+    )
+
+
+def send_test_email() -> None:
+    """Exercise the SMTP path on demand, so the credentials can be proven
+    without waiting for a real sale to appear in the feeds."""
+    _send(
+        "Delta award sale watch: test alert",
+        "This is a test from your Delta award sale watch.\n\n"
+        "If you are reading this, the SMTP credentials work and a real "
+        "alert will reach you the same way.\n" + PROFILE_REMINDER,
+    )
+
+
 def main() -> None:
+    if os.environ.get("TEST_EMAIL") == "true":
+        send_test_email()
+        print("test alert sent \u2014 check the inbox for ALERT_TO")
+        return
+
     # No seen.json yet means this is the baseline run: record what is already
     # live and stay quiet, so alerts only fire for posts published after it.
     first_run = not SEEN_PATH.exists()

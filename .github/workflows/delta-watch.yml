@@ -5,7 +5,12 @@ on:
     # UTC: 00:17, 06:17, 12:17, 18:17. GitHub may delay scheduled runs
     # by 5-30 min under load, which is fine for a ~72h flash sale.
     - cron: "17 */6 * * *"
-  workflow_dispatch: {}       # manual "Run workflow" button for testing
+  workflow_dispatch:          # manual "Run workflow" button for testing
+    inputs:
+      test_email:
+        description: "Send a test email to verify SMTP, then stop"
+        type: boolean
+        default: false
 
 permissions:
   contents: write             # lets the job commit seen.json back
@@ -26,6 +31,7 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
+          TEST_EMAIL: ${{ inputs.test_email }}
 
       - name: Persist seen items
         run: |
