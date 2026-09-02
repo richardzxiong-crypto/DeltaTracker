@@ -93,6 +93,10 @@ def send_email(hits: list) -> None:
 
 
 def main() -> None:
+    # No seen.json yet means this is the baseline run: record what is already
+    # live and stay quiet, so alerts only fire for posts published after it.
+    first_run = not SEEN_PATH.exists()
+
     seen = load_seen()
     hits = []
     for feed in FEEDS:
@@ -106,9 +110,21 @@ def main() -> None:
         except Exception as e:  # one dead feed shouldn't kill the run
             print(f"warn: {feed}: {e}")
 
+    if first_run:
+        save_seen(seen)
+        print(f"first run: seeded {len(seen)} item(s), no alert sent")
+        return
+
     if hits:
         print(f"{len(hits)} new Delta sale post(s) — sending alert")
-        send_email(hits)
+        try:
+            send_email(hits)
+        except Exception:
+            # Alert never went out — un-see those posts so the next run retries
+            # instead of silently swallowing the sale.
+            seen.difference_update(link for _, link in hits)
+            save_seen(seen)
+            raise
     else:
         print("no new Delta sale posts")
     save_seen(seen)
