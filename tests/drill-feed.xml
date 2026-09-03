@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture for the on-demand alert drill (DRILL=true). Item one must match
+     and alert; item two must be filtered out. Not fetched by normal runs. -->
+<rss version="2.0"><channel>
+  <title>Delta watch drill feed</title>
+  <item>
+    <title>DRILL (not a real sale) - Delta SkyMiles Award Flash Sale to Europe</title>
+    <link>https://example.invalid/delta-watch-drill</link>
+    <description>Drill fixture standing in for a genuine Delta award flash sale post.</description>
+  </item>
+  <item>
+    <title>DRILL - United devalues its award chart</title>
+    <link>https://example.invalid/should-be-ignored</link>
+    <description>Must not alert: no Delta mention.</description>
+  </item>
+</channel></rss>

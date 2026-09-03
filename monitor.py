@@ -33,6 +33,7 @@ SALE = re.compile(
 )
 
 SEEN_PATH = Path(__file__).parent / "seen.json"
+DRILL_PATH = Path(__file__).parent / "tests" / "drill-feed.xml"
 UA = {"User-Agent": "Mozilla/5.0 (delta-watch personal monitor)"}
 
 
@@ -115,7 +116,29 @@ def send_test_email() -> None:
     )
 
 
+def run_drill() -> None:
+    """Push a known-good sale post through the real matching and alert path.
+
+    Reads a committed fixture instead of the live feeds and never touches
+    seen.json, so the end-to-end wiring can be exercised on demand without
+    waiting for a sale or disturbing the baseline.
+    """
+    hits = [
+        (title, link)
+        for title, link, desc in fetch_items(DRILL_PATH.as_uri())
+        if matches(title, desc)
+    ]
+    if not hits:
+        raise SystemExit("drill failed: fixture sale post did not match")
+    print(f"drill: {len(hits)} fixture post(s) matched, sending a real alert")
+    send_email(hits)
+
+
 def main() -> None:
+    if os.environ.get("DRILL") == "true":
+        run_drill()
+        return
+
     if os.environ.get("TEST_EMAIL") == "true":
         send_test_email()
         print("test alert sent \u2014 check the inbox for ALERT_TO")

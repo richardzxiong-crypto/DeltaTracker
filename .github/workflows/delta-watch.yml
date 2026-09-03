@@ -11,6 +11,10 @@ on:
         description: "Send a test email to verify SMTP, then stop"
         type: boolean
         default: false
+      drill:
+        description: "Send a drill alert through the real match path, then stop"
+        type: boolean
+        default: false
 
 permissions:
   contents: write             # lets the job commit seen.json back
@@ -32,6 +36,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
           TEST_EMAIL: ${{ inputs.test_email }}
+          DRILL: ${{ inputs.drill }}
 
       - name: Persist seen items
         run: |
