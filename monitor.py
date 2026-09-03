@@ -14,6 +14,7 @@ import smtplib
 import ssl
 import urllib.request
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -75,8 +76,23 @@ def fetch_items(url: str):
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
         desc = (item.findtext("description") or "")[:500]
+        published = None
+        try:
+            published = parsedate_to_datetime(item.findtext("pubDate") or "")
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            pass
         if title and link:
-            yield title, link, desc
+            yield title, link, desc, published
+
+
+def age(published) -> str:
+    """'published 2h 14m ago', or '' when the feed gave no date."""
+    if not published:
+        return ""
+    mins = int((datetime.now(timezone.utc) - published).total_seconds() // 60)
+    return f"published {mins // 60}h {mins % 60:02d}m ago"
 
 
 def why(title: str, desc: str):
@@ -232,7 +248,7 @@ def run_diagnosis() -> None:
         except Exception as e:
             print(f"UNREADABLE {feed}: {e}")
             continue
-        for title, link, desc in items:
+        for title, link, desc, published in items:
             blob = f"{title} {desc}"
             if not DELTA.search(blob):
                 continue
@@ -245,7 +261,7 @@ def run_diagnosis() -> None:
             else:
                 tag = "quiet     "
                 reason = "no sale phrase"
-            print(f"[{tag}] {title}\n             {link}\n             {reason}")
+            print(f"[{tag}] {title}\n             {link}\n             {reason}; {age(published)}")
 
 
 def run_drill() -> None:
@@ -257,7 +273,7 @@ def run_drill() -> None:
     """
     hits = [
         (title, link)
-        for title, link, desc in fetch_items(DRILL_PATH.as_uri())
+        for title, link, desc, _ in fetch_items(DRILL_PATH.as_uri())
         if matches(title, desc)
     ]
     if not hits:
@@ -290,14 +306,14 @@ def main() -> None:
     new_posts = 0
     for feed in FEEDS:
         try:
-            for title, link, desc in fetch_items(feed):
+            for title, link, desc, published in fetch_items(feed):
                 if link in seen:
                     continue
                 seen[link] = None
                 new_posts += 1
                 reason = why(title, desc)
                 if reason:
-                    print(f"match: {title}\n       {link}\n       {reason}")
+                    print(f"match: {title}\n       {link}\n       {reason}; {age(published)}")
                     hits.append((title, link))
         except Exception as e:  # one dead feed shouldn't lose the others
             print(f"warn: {feed}: {e}")
