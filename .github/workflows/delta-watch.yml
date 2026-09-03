@@ -2,9 +2,9 @@ name: Delta award sale watch
 
 on:
   schedule:
-    # UTC: 00:17, 06:17, 12:17, 18:17. GitHub may delay scheduled runs
-    # by 5-30 min under load, which is fine for a ~72h flash sale.
-    - cron: "17 */6 * * *"
+    # Every 3h UTC. GitHub may delay scheduled runs
+    # by hours under load and drop slots, so poll twice as often as needed.
+    - cron: "17 */3 * * *"
   workflow_dispatch:          # manual "Run workflow" button for testing
     inputs:
       test_email:
