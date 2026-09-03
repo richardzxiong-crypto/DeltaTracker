@@ -46,9 +46,16 @@ stdlib Python only.
   touching `seen.json`. If the app password is wrong the run fails on that
   step with the SMTP error.
 
+- **Why did (or didn't) a post alert?** Every match is logged with its
+  reason. To see how the matcher views everything currently live, run
+  the workflow with **"Print which live posts would alert and why"**
+  ticked: it lists each post mentioning Delta as ALERT, quiet, or
+  loose-only (a sale phrase present but not near a Delta mention, the
+  digest case that is deliberately rejected). Sends and saves nothing.
+
 Quiet inboxes are the normal state: the baseline run is silent by design,
 and later runs only email when a post matches both the Delta and the
-sale patterns.
+sale patterns. The daily heartbeat is the proof it is still looking.
 
 ## Tuning
 
