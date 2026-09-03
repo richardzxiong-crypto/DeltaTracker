@@ -25,15 +25,23 @@ FEEDS = [
     "https://upgradedpoints.com/feed/",
 ]
 
-# A post matches if it mentions Delta AND looks like an award sale.
-DELTA = re.compile(r"\bdelta\b", re.I)
+# A post matches if it mentions Delta AND looks like an award sale, with
+# the two close together: newsletter digests mention Delta in one blurb and
+# "30k miles round-trip" about another airline in the next, and that must
+# not fire. SkyMiles is Delta's programme, so it counts as a Delta mention.
+DELTA = re.compile(r"\bdelta\b|skymiles", re.I)
+SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
+PROXIMITY = 60  # fallback: chars either side of a sale phrase to look for Delta
+# Buying miles is a different product from an award sale and, at Delta's
+# usual ~2.5c/mile, a bad one under the cents-per-mile rule in the alert.
+BUY = re.compile(r"\bbuy(ing)? (delta )?(skymiles|miles)\b|\b(skymiles|miles) purchase\b", re.I)
 SALE = re.compile(
     r"flash sale|award sale|award flash|skymiles award|"
     r"skymiles (sale|deal|flash|discount)|award (deal|discount)|"
     r"discounted (award|skymiles)|"
     r"award (price|rate)s? (drop|cut)|(drops?|cuts?) award (price|rate)|"
     r"miles? round-?trip|"
-    r"from [\d,]+k? (skymiles|miles)",
+    r"\b(from|as low as|as little as)( just| only)? [\d,]+k? (skymiles|miles)\b",
     re.I,
 )
 
@@ -71,9 +79,30 @@ def fetch_items(url: str):
             yield title, link, desc
 
 
+def why(title: str, desc: str):
+    """Reason a post looks like a Delta award sale, or None.
+
+    A sale phrase in a title that also names Delta is the normal case and
+    is accepted outright. In the body, the sale phrase and the Delta
+    mention must share a sentence, or sit within PROXIMITY characters of
+    each other, which keeps multi-item digests from firing.
+    """
+    if BUY.search(title):
+        return None
+    if DELTA.search(title) and (m := SALE.search(title)):
+        return f"title says {m.group(0)!r}"
+    for sentence in SENTENCE.split(desc):
+        if DELTA.search(sentence) and (m := SALE.search(sentence)):
+            return f"body says {m.group(0)!r} in the same sentence as Delta"
+    for m in SALE.finditer(desc):
+        window = desc[max(0, m.start() - PROXIMITY): m.end() + PROXIMITY]
+        if DELTA.search(window):
+            return f"body says {m.group(0)!r} within {PROXIMITY} chars of Delta"
+    return None
+
+
 def matches(title: str, desc: str) -> bool:
-    blob = f"{title} {desc}"
-    return bool(DELTA.search(blob) and SALE.search(blob))
+    return why(title, desc) is not None
 
 
 def _send(subject: str, body: str) -> None:
@@ -189,6 +218,36 @@ def report_failures(failed: list) -> None:
         )
 
 
+def run_diagnosis() -> None:
+    """Print how every live post that mentions Delta looks to the matcher.
+
+    Reads the feeds, ignores seen.json, sends nothing and saves nothing.
+    A post tagged loose-only has a sale phrase somewhere in its text but
+    not near a Delta mention: the digest case the proximity rule exists
+    to reject. Use it to answer "what would fire right now, and why?".
+    """
+    for feed in FEEDS:
+        try:
+            items = list(fetch_items(feed))
+        except Exception as e:
+            print(f"UNREADABLE {feed}: {e}")
+            continue
+        for title, link, desc in items:
+            blob = f"{title} {desc}"
+            if not DELTA.search(blob):
+                continue
+            reason = why(title, desc)
+            if reason:
+                tag = "ALERT     "
+            elif SALE.search(blob):
+                tag = "loose-only"
+                reason = "sale phrase present but not near a Delta mention"
+            else:
+                tag = "quiet     "
+                reason = "no sale phrase"
+            print(f"[{tag}] {title}\n             {link}\n             {reason}")
+
+
 def run_drill() -> None:
     """Push a known-good sale post through the real matching and alert path.
 
@@ -208,6 +267,10 @@ def run_drill() -> None:
 
 
 def main() -> None:
+    if os.environ.get("DIAGNOSE") == "true":
+        run_diagnosis()
+        return
+
     if os.environ.get("DRILL") == "true":
         run_drill()
         return
@@ -232,7 +295,9 @@ def main() -> None:
                     continue
                 seen[link] = None
                 new_posts += 1
-                if matches(title, desc):
+                reason = why(title, desc)
+                if reason:
+                    print(f"match: {title}\n       {link}\n       {reason}")
                     hits.append((title, link))
         except Exception as e:  # one dead feed shouldn't lose the others
             print(f"warn: {feed}: {e}")

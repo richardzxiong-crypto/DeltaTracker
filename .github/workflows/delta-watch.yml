@@ -15,6 +15,10 @@ on:
         description: "Send a drill alert through the real match path, then stop"
         type: boolean
         default: false
+      diagnose:
+        description: "Print which live posts would alert and why; send nothing"
+        type: boolean
+        default: false
 
 permissions:
   contents: write             # lets the job commit seen.json back
@@ -37,6 +41,7 @@ jobs:
           ALERT_TO: ${{ secrets.ALERT_TO }}
           TEST_EMAIL: ${{ inputs.test_email }}
           DRILL: ${{ inputs.drill }}
+          DIAGNOSE: ${{ inputs.diagnose }}
 
       - name: Persist seen items
         run: |
