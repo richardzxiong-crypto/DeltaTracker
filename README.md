@@ -1,9 +1,11 @@
 # Delta Award Sale Watch
 
-Emails you within ~6 hours whenever the major award-travel blogs
+Emails you within a few hours whenever the major award-travel blogs
 (Thrifty Traveler, Frequent Miler, Loyalty Lobby, One Mile at a Time,
 Upgraded Points) publish coverage of a new Delta SkyMiles award or
-flash sale. Runs free on GitHub Actions, stdlib Python only.
+flash sale, and sends a short daily heartbeat so you can tell "nothing
+to report" apart from "not running". Runs free on GitHub Actions,
+stdlib Python only.
 
 ## Setup (~10 minutes)
 
@@ -29,10 +31,15 @@ flash sale. Runs free on GitHub Actions, stdlib Python only.
 - **Is the state persisting?** `seen.json` should exist at the repo root,
   with `chore: update seen items` commits from `delta-watch-bot` as the
   feeds churn.
+- **Is it still alive?** Expect one "daily heartbeat" email roughly every
+  20-24 hours with how many checks ran and posts were scanned. If the
+  heartbeat stops, the watch is down: open the Actions tab and look for a
+  red run.
 - **Are scheduled runs happening?** Runs triggered by the cron are labelled
-  with the schedule rather than a person's avatar. GitHub commonly delays
-  them 5-30 minutes, and can skip a slot entirely when its runners are
-  busy - harmless for a sale that lasts ~72 hours.
+  with the schedule rather than a person's avatar. GitHub honours only a
+  fraction of scheduled slots on shared runners (observed: 2 of 6 in a
+  day) and delays the rest by hours, so the cron asks hourly to land a
+  few real checks a day - plenty for a sale that lasts ~72 hours.
 - **Will email actually reach me?** Don't wait for a real sale to find out.
   Actions tab > Run workflow > tick **"Send a test email to verify SMTP,
   then stop"**. It sends one test message to `ALERT_TO` and exits without
@@ -45,8 +52,9 @@ sale patterns.
 
 ## Tuning
 
-- **Frequency:** edit the cron in the workflow. Every 3 hours:
-  `"17 */3 * * *"`. Flash sales last ~72h, so 6h is plenty.
+- **Frequency:** edit the cron in the workflow. It is hourly because
+  GitHub drops most scheduled slots; don't go sparser than `*/3`.
+- **Heartbeat cadence:** `HEARTBEAT_EVERY` in `monitor.py` (default 20h).
 - **Keywords:** tighten or loosen the `SALE` regex in `monitor.py`.
 - **Non-Gmail SMTP:** set `SMTP_HOST` / `SMTP_PORT` as extra secrets
   and pass them through in the workflow env block.

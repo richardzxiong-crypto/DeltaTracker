@@ -8,6 +8,7 @@ to the repo by the GitHub Actions workflow).
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 import re
 import smtplib
 import ssl
@@ -38,6 +39,8 @@ SALE = re.compile(
 
 SEEN_PATH = Path(__file__).parent / "seen.json"
 SEEN_CAP = 1000  # ~2 weeks of posts at the observed ~70/day
+STATE_PATH = Path(__file__).parent / "state.json"
+HEARTBEAT_EVERY = timedelta(hours=20)  # lands once a day despite cron jitter
 DRILL_PATH = Path(__file__).parent / "tests" / "drill-feed.xml"
 UA = {"User-Agent": "Mozilla/5.0 (delta-watch personal monitor)"}
 
@@ -124,6 +127,53 @@ def send_test_email() -> None:
     )
 
 
+def load_state() -> dict:
+    if STATE_PATH.exists():
+        return json.loads(STATE_PATH.read_text())
+    return {"last_heartbeat": None, "runs": 0, "posts": 0}
+
+
+def save_state(state: dict) -> None:
+    STATE_PATH.write_text(json.dumps(state, indent=1) + "\n")
+
+
+def heartbeat(state: dict, new_posts: int, sales: int, failed: list) -> None:
+    """Send a short daily proof-of-life.
+
+    A watch that only emails on a match is silent for weeks at a time, and
+    from the inbox that silence looks exactly like a watch that has died.
+    A heartbeat that stops arriving is the signal that something is wrong.
+    """
+    state["runs"] += 1
+    state["posts"] += new_posts
+    state["sales"] = state.get("sales", 0) + sales
+    save_state(state)  # counters persist even if the send below fails
+
+    now = datetime.now(timezone.utc)
+    last = state.get("last_heartbeat")
+    if last and now - datetime.fromisoformat(last) < HEARTBEAT_EVERY:
+        return
+
+    feeds = (
+        f"{len(FEEDS) - len(failed)} of {len(FEEDS)} feeds readable"
+        + (f" (unreadable: {', '.join(failed)})" if failed else "")
+    )
+    n = state["sales"]
+    _send(
+        "Delta award sale watch: daily heartbeat, "
+        + (f"{n} sale alert(s) sent" if n else "no sale yet"),
+        f"The watch is alive as of {now:%Y-%m-%d %H:%M} UTC.\n\n"
+        f"Since the last heartbeat: {state['runs']} check(s), "
+        f"{state['posts']} new post(s) scanned, {n} Delta award sale(s) found.\n"
+        f"Feeds: {feeds}.\n\n"
+        "A matching post triggers a separate 'Delta award sale alert' email "
+        "immediately. If this heartbeat stops arriving, the watch is down.",
+    )
+    state.update(last_heartbeat=now.isoformat(), runs=0, posts=0, sales=0)
+    save_state(state)
+    print("heartbeat sent")
+
+
 def report_failures(failed: list) -> None:
     """Fail the run when a feed could not be read.
 
@@ -174,12 +224,14 @@ def main() -> None:
     seen = load_seen()
     hits = []
     failed = []
+    new_posts = 0
     for feed in FEEDS:
         try:
             for title, link, desc in fetch_items(feed):
                 if link in seen:
                     continue
                 seen[link] = None
+                new_posts += 1
                 if matches(title, desc):
                     hits.append((title, link))
         except Exception as e:  # one dead feed shouldn't lose the others
@@ -189,6 +241,7 @@ def main() -> None:
     if first_run:
         save_seen(seen)
         print(f"first run: seeded {len(seen)} item(s), no alert sent")
+        heartbeat(load_state(), new_posts, 0, failed)
         report_failures(failed)
         return
 
@@ -206,6 +259,7 @@ def main() -> None:
     else:
         print("no new Delta sale posts")
     save_seen(seen)
+    heartbeat(load_state(), new_posts, len(hits), failed)
     report_failures(failed)
 
 

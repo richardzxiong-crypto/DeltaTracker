@@ -2,9 +2,9 @@ name: Delta award sale watch
 
 on:
   schedule:
-    # Every 3h UTC. GitHub may delay scheduled runs
-    # by hours under load and drop slots, so poll twice as often as needed.
-    - cron: "17 */3 * * *"
+    # Hourly. GitHub honoured only 2 of 6 three-hourly slots in a day, so
+    # ask far more often than the ~72h sale window needs and let it drop some.
+    - cron: "17 * * * *"
   workflow_dispatch:          # manual "Run workflow" button for testing
     inputs:
       test_email:
@@ -42,5 +42,5 @@ jobs:
         run: |
           git config user.name "delta-watch-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add seen.json
+          git add seen.json state.json
           git diff --cached --quiet || (git commit -m "chore: update seen items" && git push)
