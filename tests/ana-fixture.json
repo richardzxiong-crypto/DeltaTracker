@@ -1,0 +1,19 @@
+{
+  "_comment": "Shaped like seats.aero /partnerapi/search records. out = NYC->Japan, ret = Japan->NYC. Used by ANA_FIXTURE=true.",
+  "out": [
+    {"ID": "a1", "Date": "2027-03-14", "Route": {"OriginAirport": "JFK", "DestinationAirport": "HND", "Source": "united"}, "Source": "united",
+     "JAvailable": true, "JMileageCost": "88000", "JMileageCostRaw": 88000, "JRemainingSeats": 2, "JAirlines": "NH", "JDirect": true},
+    {"ID": "a2", "Date": "2027-03-14", "Route": {"OriginAirport": "JFK", "DestinationAirport": "HND", "Source": "aeroplan"}, "Source": "aeroplan",
+     "JAvailable": true, "JMileageCost": "75000", "JMileageCostRaw": 75000, "JRemainingSeats": 2, "JAirlines": "NH", "JDirect": true},
+    {"ID": "a3", "Date": "2027-04-02", "Route": {"OriginAirport": "EWR", "DestinationAirport": "NRT", "Source": "united"}, "Source": "united",
+     "JAvailable": true, "JMileageCost": "99000", "JMileageCostRaw": 99000, "JRemainingSeats": 1, "JAirlines": "UA, NH", "JDirect": false},
+    {"ID": "a4", "Date": "2027-04-05", "Route": {"OriginAirport": "JFK", "DestinationAirport": "NRT", "Source": "united"}, "Source": "united",
+     "JAvailable": true, "JMileageCost": "88000", "JMileageCostRaw": 88000, "JRemainingSeats": 4, "JAirlines": "JL", "JDirect": true},
+    {"ID": "a5", "Date": "2027-04-06", "Route": {"OriginAirport": "JFK", "DestinationAirport": "HND", "Source": "united"}, "Source": "united",
+     "JAvailable": false, "YAvailable": true, "JMileageCost": "0", "JMileageCostRaw": 0, "JRemainingSeats": 0, "JAirlines": "", "JDirect": false}
+  ],
+  "ret": [
+    {"ID": "r1", "Date": "2027-03-28", "Route": {"OriginAirport": "HND", "DestinationAirport": "JFK", "Source": "aeroplan"}, "Source": "aeroplan",
+     "JAvailable": true, "JMileageCost": "60000", "JMileageCostRaw": 60000, "JRemainingSeats": 3, "JAirlines": "NH", "JDirect": true}
+  ]
+}

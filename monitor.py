@@ -182,6 +182,24 @@ def save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=1) + "\n")
 
 
+def ana_status() -> str:
+    """One line on the ANA award watch, read from its own state file."""
+    path = Path(__file__).parent / "ana_state.json"
+    if not path.exists():
+        return "ANA watch: has not run yet."
+    st = json.loads(path.read_text())
+    if not st.get("configured"):
+        return "ANA watch: not configured (add the SEATS_AERO_KEY secret to enable it)."
+    now = datetime.now(timezone.utc)
+    checked = datetime.fromisoformat(st["last_check"])
+    hours = (now - checked).total_seconds() / 3600
+    last_alert = st.get("last_alert")
+    alert = (f"last alert {(now - datetime.fromisoformat(last_alert)).days}d ago"
+             if last_alert else "no alert sent yet")
+    return (f"ANA watch: checked {hours:.0f}h ago, {st.get('seats_seen', 0)} ANA business "
+            f"date(s) open NYC<->Japan, {alert}.")
+
+
 def heartbeat(state: dict, new_posts: int, sales: int, failed: list) -> None:
     """Send a short daily proof-of-life.
 
@@ -210,7 +228,8 @@ def heartbeat(state: dict, new_posts: int, sales: int, failed: list) -> None:
         f"The watch is alive as of {now:%Y-%m-%d %H:%M} UTC.\n\n"
         f"Since the last heartbeat: {state['runs']} check(s), "
         f"{state['posts']} new post(s) scanned, {n} Delta award sale(s) found.\n"
-        f"Feeds: {feeds}.\n\n"
+        f"Feeds: {feeds}.\n"
+        f"{ana_status()}\n\n"
         "A matching post triggers a separate 'Delta award sale alert' email "
         "immediately. If this heartbeat stops arriving, the watch is down.",
     )

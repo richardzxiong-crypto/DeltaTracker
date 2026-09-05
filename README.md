@@ -57,6 +57,29 @@ Quiet inboxes are the normal state: the baseline run is silent by design,
 and later runs only email when a post matches both the Delta and the
 sale patterns. The daily heartbeat is the proof it is still looking.
 
+## ANA business award watch (NYC <-> Tokyo / Osaka)
+
+`ana_watch.py` runs in the same workflow and checks actual award *space*
+rather than blog coverage: business-class saver seats on ANA-operated
+flights between JFK/EWR and HND/NRT/KIX for the next ~330 days, any dates.
+
+It reads the [seats.aero](https://seats.aero) Partner API, which mirrors
+the Star Alliance partner inventory ANA releases. That needs seats.aero
+Pro (about $10/month) and its API key stored as the `SEATS_AERO_KEY`
+secret. Until the secret exists the step prints a notice and skips, and
+the daily heartbeat says "not configured".
+
+- **What alerts:** any ANA business seat not seen in the previous 48
+  hours, either direction. ANA's own programme prices this at 75k-90k
+  round trip by season, so every seat is under the 135k round-trip
+  threshold; each line also shows the cheapest partner programme and its
+  price, and one-ways at or under 65k get their own section.
+- **Diagnose:** the same "print which live posts would alert" button also
+  dumps the first raw seats.aero record and every ANA seat it sees, for
+  checking field names or the auth header on the first real run. If the
+  API rejects the header name, set the `SEATS_AERO_AUTH_HEADER` secret.
+- **Thresholds, airports, window:** constants at the top of `ana_watch.py`.
+
 ## Tuning
 
 - **Frequency:** edit the cron in the workflow. It is hourly because

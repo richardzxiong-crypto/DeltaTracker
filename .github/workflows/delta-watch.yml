@@ -43,9 +43,22 @@ jobs:
           DRILL: ${{ inputs.drill }}
           DIAGNOSE: ${{ inputs.diagnose }}
 
+      - name: Check ANA business award space
+        if: always()              # a Delta feed failure must not skip this
+        run: python ana_watch.py
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+          SEATS_AERO_KEY: ${{ secrets.SEATS_AERO_KEY }}
+          TEST_EMAIL: ${{ inputs.test_email }}
+          DRILL: ${{ inputs.drill }}
+          DIAGNOSE: ${{ inputs.diagnose }}
+
       - name: Persist seen items
+        if: always()              # commit state even when a check exited non-zero
         run: |
           git config user.name "delta-watch-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add seen.json state.json
+          git add seen.json state.json ana_state.json
           git diff --cached --quiet || (git commit -m "chore: update seen items" && git push)
