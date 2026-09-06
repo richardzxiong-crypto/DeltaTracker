@@ -17,12 +17,34 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from monitor import _send
+from monitor import _send  # only used when emailing
 
-ORIGIN = os.environ.get("ORIGIN") or "NYC"
-DESTS = [d.strip().upper() for d in (os.environ.get("DESTS") or "TYO,OSA").split(",") if d.strip()]
-DIRECTION = (os.environ.get("DIRECTION") or "both").lower()
-PROBE = os.environ.get("PROBE") == "true"
+import argparse
+
+
+def _args():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--start", default=os.environ.get("START_DATE"), help="first date YYYY-MM-DD")
+    ap.add_argument("--end", default=os.environ.get("END_DATE"), help="last date YYYY-MM-DD (max 31 days)")
+    ap.add_argument("--direction", default=os.environ.get("DIRECTION") or "both", choices=["both", "out", "return"])
+    ap.add_argument("--origin", default=os.environ.get("ORIGIN") or "NYC")
+    ap.add_argument("--dests", default=os.environ.get("DESTS") or "TYO,OSA", help="comma-separated")
+    ap.add_argument("--probe", action="store_true", default=os.environ.get("PROBE") == "true",
+                    help="first search only; dump United's raw response; no email")
+    ap.add_argument("--no-email", action="store_true", default=os.environ.get("NO_EMAIL") == "true",
+                    help="print the report instead of emailing it")
+    ap.add_argument("--headed", action="store_true", help="show the browser window (local debugging)")
+    a = ap.parse_args()
+    if not a.start or not a.end:
+        ap.error("--start and --end (or START_DATE/END_DATE) are required")
+    return a
+
+
+ARGS = _args()
+ORIGIN = ARGS.origin.upper()
+DESTS = [d.strip().upper() for d in ARGS.dests.split(",") if d.strip()]
+DIRECTION = ARGS.direction.lower()
+PROBE = ARGS.probe
 MAX_DAYS = 31
 PAUSE = 4.0            # seconds between searches: polite, and less bot-like
 GIVE_UP_AFTER = 3      # consecutive failed searches before aborting
@@ -51,8 +73,8 @@ LAUNCH_LADDER = [
 
 
 def date_range() -> list:
-    start = date.fromisoformat(os.environ["START_DATE"])
-    end = date.fromisoformat(os.environ["END_DATE"])
+    start = date.fromisoformat(ARGS.start)
+    end = date.fromisoformat(ARGS.end)
     if end < start:
         raise SystemExit("END_DATE is before START_DATE")
     if (end - start).days + 1 > MAX_DAYS:
@@ -164,7 +186,7 @@ def open_browser(pw, out_dir: Path):
     whose homepage visit and warm-up succeed, else raise with every error."""
     errors = []
     for name, opts in LAUNCH_LADDER:
-        browser = pw.chromium.launch(headless=True, **opts)
+        browser = pw.chromium.launch(headless=not ARGS.headed, **opts)
         try:
             ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="en-US",
                                       timezone_id="America/New_York")
@@ -189,7 +211,7 @@ def open_browser(pw, out_dir: Path):
 def blocked(page) -> str:
     """Text hinting at a bot block on the current page, or ''."""
     try:
-        body = page.inner_text("body")[:2000].lower()
+        body = page.inner_text("body", timeout=5_000)[:2000].lower()
     except Exception:
         return ""
     for hint in ("access denied", "pardon our interruption", "unusual traffic", "verify you are human", "reference #"):
@@ -288,9 +310,12 @@ def main() -> None:
         print("probe complete; no email sent")
         return
     subject, body = report(results, errors, days)
-    print("\n" + body)
-    _send(subject, body)
-    print("\nemail sent")
+    print("\n" + subject + "\n\n" + body)
+    if ARGS.no_email:
+        print("\n(--no-email: not sent)")
+    else:
+        _send(subject, body)
+        print("\nemail sent")
     if errors and not results:
         raise SystemExit("every search failed; see errors above")
 

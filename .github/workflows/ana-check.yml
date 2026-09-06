@@ -24,13 +24,18 @@ on:
         description: "Diagnostic: run the first search only and dump United's raw response; no email"
         type: boolean
         default: false
+      runner:
+        description: "Where to run. GitHub's servers are blocked by united.com; a self-hosted runner on your own machine is not"
+        type: choice
+        options: [self-hosted, ubuntu-latest]
+        default: self-hosted
 
 permissions:
   contents: read
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +47,11 @@ jobs:
       - name: Install a browser
         run: |
           pip install --quiet playwright
-          python -m playwright install --with-deps chromium
+          if [ "${{ inputs.runner }}" = "ubuntu-latest" ]; then
+            python -m playwright install --with-deps chromium
+          else
+            python -m playwright install chromium
+          fi
 
       - name: Check ANA business award space on united.com
         run: python ana_check.py
