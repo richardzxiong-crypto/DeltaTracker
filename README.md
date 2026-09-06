@@ -63,25 +63,65 @@ A separate workflow, **"ANA award check (on demand)"**, checks actual award
 *space* rather than blog coverage: business-class awards on ANA-operated
 flights between New York and Tokyo / Osaka, one united.com search per date
 in a range you choose. United shows Star Alliance partner space without a
-login, which is the inventory ANA releases to partners, so there is no
-account of yours involved and nothing to lock.
+login, which is the inventory ANA releases to partners, so no account of
+yours is involved and nothing can be locked.
 
-1. Actions tab > **ANA award check (on demand)** > Run workflow.
-2. Enter the first and last date (up to 31 days), pick a direction, keep
-   `NYC` and `TYO,OSA` unless you want something else, and run.
-3. A few minutes later one email lists, per date, every flight with an ANA
-   business award: flight numbers, routing, nonstop or connection, and the
-   miles United would charge. ANA Mileage Club prices the same seat at
-   75k-90k round trip by season, so any seat listed is under the 135k
-   round-trip threshold; one-ways at or under 65k are flagged.
+**It cannot run on GitHub's own servers.** The "Probe award sites"
+workflow showed why: from a hosted runner, united.com accepts the
+connection and never answers, Aeroplan and LifeMiles return 403 Access
+Denied, Copa returns 401. Every no-login award site blocks cloud address
+ranges outright. From a home connection the same sites load normally.
+
+So the workflow runs on a **self-hosted runner**: a small GitHub agent on
+your own computer. The Actions button works exactly the same; the job just
+executes on your machine, from your IP.
+
+### One-time setup (about 10 minutes)
+
+1. **Make the repo private first.** GitHub advises against self-hosted
+   runners on public repos. These workflows only run when you press the
+   button, but private removes the question. Settings > General > Danger
+   Zone > Change visibility. (The hourly Delta watch then uses the free
+   2,000 minutes/month; it needs about 400.)
+2. Settings > Actions > **Runners** > **New self-hosted runner**. Pick your
+   OS, then paste the download and configure commands it shows into a
+   terminal. Accept the defaults; the runner registers with the label
+   `self-hosted`.
+3. Start it with `./run.sh` (Mac/Linux) or `run.cmd` (Windows) and leave
+   that terminal open while you want to use it, or install it as a
+   service with `./svc.sh install && ./svc.sh start` so it is always on.
+4. Python 3 must be on the machine; the workflow installs Playwright and
+   a Chromium build into your user cache on first run.
+
+### Running a check
+
+Actions tab > **ANA award check (on demand)** > Run workflow. Enter the
+first and last date (up to 31 days), pick a direction, keep `NYC` and
+`TYO,OSA` unless you want something else, and leave the runner as
+`self-hosted`. A few minutes later one email lists, per date, every flight
+with an ANA business award: flight numbers, routing, nonstop or
+connection, and the miles United would charge. ANA Mileage Club prices
+the same seat at 75k-90k round trip by season, so every seat listed is
+under the 135k round-trip threshold; one-ways at or under 65k are flagged.
 
 The job log has the same list, and the run's artifact keeps United's raw
-responses and a screenshot of any search that failed. If united.com blocks
-a search the run says so and moves on; three failures in a row stop it.
+responses and a screenshot of any search that failed. Three failures in a
+row stop the run. **Probe** ticked runs only the first search and prints
+United's raw response shape, for adjusting the parser if United changes
+its site.
 
-**Probe** ticked runs only the first search and prints United's raw
-response shape instead of emailing, for adjusting the parser if United
-changes its site.
+### Without a runner
+
+The same script runs by hand:
+
+```
+pip install playwright && python -m playwright install chromium
+python ana_check.py --start 2027-03-01 --end 2027-03-31 --no-email
+```
+
+`--direction out|return|both`, `--dests TYO,OSA`, `--probe`, and
+`--headed` (watch the browser) are available. Without `--no-email` it
+needs `SMTP_USER`, `SMTP_PASS` and `ALERT_TO` in the environment.
 
 ## Tuning
 

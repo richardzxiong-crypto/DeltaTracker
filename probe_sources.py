@@ -59,12 +59,16 @@ def main() -> None:
             browser = pw.chromium.launch(headless=True, args=opts.get("args", []) + ["--disable-blink-features=AutomationControlled"],
                                          channel=opts.get("channel"))
             ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="en-US", timezone_id="America/New_York")
-            page = ctx.new_page()
             for site, home, search in SITES:
+                # A fresh page per site: a navigation that a site kills at the
+                # protocol level can linger and "interrupt" the next goto on
+                # the same page, which would blame the wrong site.
+                page = ctx.new_page()
                 print(f"\n[{site}]")
                 print(f"  home    {visit(page, home)}")
                 if search:
                     print(f"  search  {visit(page, search)}")
+                page.close()
             browser.close()
 
 
