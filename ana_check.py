@@ -34,8 +34,20 @@ OUT_DIR = Path(__file__).parent / "ana-check-output"
 
 SEARCH_URL = ("https://www.united.com/en/us/fsr/choose-flights"
               "?f={frm}&t={to}&d={day}&tt=1&at=1&px=1&taxng=1&newHP=True&clm=7&st=bestmatches")
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
+HOME_URL = "https://www.united.com/en/us"
+FLIGHTS_API = "FetchFlights"
+
+# Tried in order until the first search succeeds. The headless *shell* binary
+# has a browser fingerprint bot managers recognise; the full Chromium in new
+# headless mode (channel="chromium") mostly does not. ERR_HTTP2_PROTOCOL_ERROR
+# on first contact is the HTTP/2 fingerprint being rejected, so later rungs
+# fall back to HTTP/1.1. No user-agent override: a UA that disagrees with the
+# real binary version is itself a tell.
+LAUNCH_LADDER = [
+    ("full-chromium", dict(channel="chromium", args=["--disable-blink-features=AutomationControlled"])),
+    ("full-chromium-http1", dict(channel="chromium", args=["--disable-blink-features=AutomationControlled", "--disable-http2"])),
+    ("headless-shell-http1", dict(args=["--disable-blink-features=AutomationControlled", "--disable-http2"])),
+]
 
 
 def date_range() -> list:
@@ -126,12 +138,52 @@ def parse(payload: dict) -> list:
     return rows
 
 
-def search(page, frm: str, to: str, day: date) -> dict:
-    """Load one award search and capture United's flight-list API response."""
+def search(page, frm: str, to: str, day: date, api_log: list) -> dict:
+    """Load one award search and capture United's flight-list API response.
+
+    Every /api/ response seen during the load is appended to api_log as
+    (status, url), so a failed search still shows what the site called.
+    """
     url = SEARCH_URL.format(frm=frm, to=to, day=day.isoformat())
-    with page.expect_response(lambda r: "FetchFlights" in r.url and r.status == 200, timeout=75_000) as got:
-        page.goto(url, wait_until="domcontentloaded", timeout=75_000)
-    return got.value.json()
+
+    def on_response(r):
+        if "/api/" in r.url:
+            api_log.append((r.status, r.url[:160]))
+
+    page.on("response", on_response)
+    try:
+        with page.expect_response(lambda r: FLIGHTS_API in r.url and r.status == 200, timeout=75_000) as got:
+            page.goto(url, wait_until="domcontentloaded", timeout=75_000)
+        return got.value.json()
+    finally:
+        page.remove_listener("response", on_response)
+
+
+def open_browser(pw, out_dir: Path):
+    """Walk the launch ladder; return (name, browser, page) for the first rung
+    whose homepage visit and warm-up succeed, else raise with every error."""
+    errors = []
+    for name, opts in LAUNCH_LADDER:
+        browser = pw.chromium.launch(headless=True, **opts)
+        try:
+            ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="en-US",
+                                      timezone_id="America/New_York")
+            page = ctx.new_page()
+            resp = page.goto(HOME_URL, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(3_000)  # let the bot-manager sensor script run and set its cookies
+            status = resp.status if resp else None
+            hint = blocked(page)
+            print(f"[{name}] homepage HTTP {status}, title={page.title()[:60]!r}, ua={page.evaluate('navigator.userAgent')[:90]!r}"
+                  + (f", page says: {hint}" if hint else ""))
+            if status and status < 400 and not hint:
+                return name, browser, page
+            errors.append(f"{name}: HTTP {status}" + (f" ({hint})" if hint else ""))
+            page.screenshot(path=str(out_dir / f"home-{name}.png"))
+        except Exception as e:
+            errors.append(f"{name}: {type(e).__name__}: {str(e)[:140]}")
+            print(f"[{name}] failed: {errors[-1]}")
+        browser.close()
+    raise RuntimeError("united.com refused every browser configuration: " + " | ".join(errors))
 
 
 def blocked(page) -> str:
@@ -186,18 +238,22 @@ def main() -> None:
 
     results, errors, streak = [], [], 0
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        ctx = browser.new_context(user_agent=UA, viewport={"width": 1366, "height": 900}, locale="en-US")
-        page = ctx.new_page()
+        profile, browser, page = open_browser(pw, OUT_DIR)
+        print(f"using browser profile: {profile}")
         for i, (d, frm, to) in enumerate(plan):
             if i:
                 time.sleep(PAUSE)
+            api_log = []
             try:
-                payload = search(page, frm, to, d)
+                payload = search(page, frm, to, d, api_log)
             except Exception as e:
                 hint = blocked(page)
                 why = f"{type(e).__name__}: {str(e)[:120]}" + (f" (page says: {hint})" if hint else "")
                 print(f"FAIL {d} {frm}->{to}: {why}")
+                if api_log:
+                    print("  api calls seen:", *[f"\n    {st} {u}" for st, u in api_log[:25]])
+                else:
+                    print("  no /api/ responses observed; page title:", repr(page.title()[:80]))
                 try:
                     page.screenshot(path=str(OUT_DIR / f"fail-{d}-{frm}-{to}.png"))
                 except Exception:
@@ -210,6 +266,7 @@ def main() -> None:
             streak = 0
             (OUT_DIR / f"{d}-{frm}-{to}.json").write_text(json.dumps(payload)[:2_000_000])
             if PROBE:
+                print("api calls seen:", *[f"\n    {st} {u}" for st, u in api_log[:25]])
                 trips = (payload.get("data") or payload).get("Trips") or []
                 flights = trips[0].get("Flights") if trips else []
                 print("top-level keys:", list(payload)[:20])
