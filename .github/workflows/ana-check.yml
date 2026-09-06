@@ -1,0 +1,67 @@
+name: ANA award check (on demand)
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "First date to check (YYYY-MM-DD)"
+        required: true
+      end_date:
+        description: "Last date to check (YYYY-MM-DD), at most 31 days after start"
+        required: true
+      direction:
+        description: "Which way"
+        type: choice
+        options: [both, out, return]
+        default: both
+      origin:
+        description: "New York side (NYC = all airports)"
+        default: NYC
+      destinations:
+        description: "Japan side, comma-separated (TYO = HND+NRT, OSA = KIX+ITM)"
+        default: "TYO,OSA"
+      probe:
+        description: "Diagnostic: run the first search only and dump United's raw response; no email"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install a browser
+        run: |
+          pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Check ANA business award space on united.com
+        run: python ana_check.py
+        env:
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+          DIRECTION: ${{ inputs.direction }}
+          ORIGIN: ${{ inputs.origin }}
+          DESTS: ${{ inputs.destinations }}
+          PROBE: ${{ inputs.probe }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+
+      - name: Keep raw responses and failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ana-check-output
+          path: ana-check-output/
+          if-no-files-found: ignore
+          retention-days: 7

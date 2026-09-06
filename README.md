@@ -57,28 +57,31 @@ Quiet inboxes are the normal state: the baseline run is silent by design,
 and later runs only email when a post matches both the Delta and the
 sale patterns. The daily heartbeat is the proof it is still looking.
 
-## ANA business award watch (NYC <-> Tokyo / Osaka)
+## ANA business award check (on demand)
 
-`ana_watch.py` runs in the same workflow and checks actual award *space*
-rather than blog coverage: business-class saver seats on ANA-operated
-flights between JFK/EWR and HND/NRT/KIX for the next ~330 days, any dates.
+A separate workflow, **"ANA award check (on demand)"**, checks actual award
+*space* rather than blog coverage: business-class awards on ANA-operated
+flights between New York and Tokyo / Osaka, one united.com search per date
+in a range you choose. United shows Star Alliance partner space without a
+login, which is the inventory ANA releases to partners, so there is no
+account of yours involved and nothing to lock.
 
-It reads the [seats.aero](https://seats.aero) Partner API, which mirrors
-the Star Alliance partner inventory ANA releases. That needs seats.aero
-Pro (about $10/month) and its API key stored as the `SEATS_AERO_KEY`
-secret. Until the secret exists the step prints a notice and skips, and
-the daily heartbeat says "not configured".
+1. Actions tab > **ANA award check (on demand)** > Run workflow.
+2. Enter the first and last date (up to 31 days), pick a direction, keep
+   `NYC` and `TYO,OSA` unless you want something else, and run.
+3. A few minutes later one email lists, per date, every flight with an ANA
+   business award: flight numbers, routing, nonstop or connection, and the
+   miles United would charge. ANA Mileage Club prices the same seat at
+   75k-90k round trip by season, so any seat listed is under the 135k
+   round-trip threshold; one-ways at or under 65k are flagged.
 
-- **What alerts:** any ANA business seat not seen in the previous 48
-  hours, either direction. ANA's own programme prices this at 75k-90k
-  round trip by season, so every seat is under the 135k round-trip
-  threshold; each line also shows the cheapest partner programme and its
-  price, and one-ways at or under 65k get their own section.
-- **Diagnose:** the same "print which live posts would alert" button also
-  dumps the first raw seats.aero record and every ANA seat it sees, for
-  checking field names or the auth header on the first real run. If the
-  API rejects the header name, set the `SEATS_AERO_AUTH_HEADER` secret.
-- **Thresholds, airports, window:** constants at the top of `ana_watch.py`.
+The job log has the same list, and the run's artifact keeps United's raw
+responses and a screenshot of any search that failed. If united.com blocks
+a search the run says so and moves on; three failures in a row stop it.
+
+**Probe** ticked runs only the first search and prints United's raw
+response shape instead of emailing, for adjusting the parser if United
+changes its site.
 
 ## Tuning
 
