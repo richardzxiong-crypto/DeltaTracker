@@ -24,12 +24,16 @@ SITES = [
 ]
 BLOCK_HINTS = ("access denied", "pardon our interruption", "unusual traffic", "verify you are human",
                "reference #", "request blocked", "captcha", "bot detection")
+# A site that has not answered in this long is not going to. Kept short
+# because a blocked host tarpits the connection rather than refusing it,
+# and every one of those waits is paid twice, once per browser profile.
+VISIT_TIMEOUT = 20_000
 
 
 def visit(page, url: str) -> str:
     t0 = time.time()
     try:
-        resp = page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+        resp = page.goto(url, wait_until="domcontentloaded", timeout=VISIT_TIMEOUT)
         page.wait_for_timeout(2_000)
         status = resp.status if resp else "?"
         title = ""
