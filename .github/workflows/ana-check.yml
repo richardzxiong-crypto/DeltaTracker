@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: "First date to check (YYYY-MM-DD)"
-        required: true
+        description: "First date to check (YYYY-MM-DD). Leave blank only for the site-access test"
+        required: false
       end_date:
         description: "Last date to check (YYYY-MM-DD), at most 31 days after start"
-        required: true
+        required: false
       direction:
         description: "Which way"
         type: choice
@@ -22,6 +22,10 @@ on:
         default: "TYO,OSA"
       probe:
         description: "Diagnostic: run the first search only and dump United's raw response; no email"
+        type: boolean
+        default: false
+      site_access:
+        description: "Diagnostic: just test whether this runner can reach the award sites; no search, no email"
         type: boolean
         default: false
       runner:
@@ -53,7 +57,12 @@ jobs:
             python -m playwright install chromium
           fi
 
+      - name: Test whether this runner can reach the award sites
+        if: inputs.site_access
+        run: python probe_sources.py
+
       - name: Check ANA business award space on united.com
+        if: ${{ !inputs.site_access }}
         run: python ana_check.py
         env:
           START_DATE: ${{ inputs.start_date }}

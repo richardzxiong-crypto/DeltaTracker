@@ -13,6 +13,7 @@ import re
 import smtplib
 import ssl
 import urllib.request
+from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from email.message import EmailMessage
@@ -50,6 +51,7 @@ SEEN_PATH = Path(__file__).parent / "seen.json"
 SEEN_CAP = 1000  # ~2 weeks of posts at the observed ~70/day
 STATE_PATH = Path(__file__).parent / "state.json"
 HEARTBEAT_EVERY = timedelta(hours=20)  # lands once a day despite cron jitter
+FAIL_STREAK = 3  # consecutive unreadable runs before a feed counts as broken
 DRILL_PATH = Path(__file__).parent / "tests" / "drill-feed.xml"
 UA = {"User-Agent": "Mozilla/5.0 (delta-watch personal monitor)"}
 
@@ -199,10 +201,11 @@ def heartbeat(state: dict, new_posts: int, sales: int, failed: list) -> None:
     if last and now - datetime.fromisoformat(last) < HEARTBEAT_EVERY:
         return
 
-    feeds = (
-        f"{len(FEEDS) - len(failed)} of {len(FEEDS)} feeds readable"
-        + (f" (unreadable: {', '.join(failed)})" if failed else "")
-    )
+    streaks = state.get("feed_failures") or {}
+    feeds = f"{len(FEEDS) - len(failed)} of {len(FEEDS)} feeds readable"
+    if streaks:
+        feeds += " (failing: " + ", ".join(
+            f"{urlsplit(f).netloc or f} x{n}" for f, n in sorted(streaks.items())) + ")"
     n = state["sales"]
     _send(
         "Delta award sale watch: daily heartbeat, "
@@ -219,19 +222,43 @@ def heartbeat(state: dict, new_posts: int, sales: int, failed: list) -> None:
     print("heartbeat sent")
 
 
-def report_failures(failed: list) -> None:
-    """Fail the run when a feed could not be read.
+def note_failures(state: dict, failed: list) -> list:
+    """Track consecutive unreadable runs per feed; return the broken ones.
 
-    A blog that starts blocking us is the quietest way to miss a sale: the
-    remaining feeds still succeed, so the job stays green while a source is
-    no longer watched. Exiting non-zero turns that into a red run and the
-    failure notification GitHub sends for it. State is already saved by the
-    time this runs, so nothing is lost.
+    A feed reading once as a truncated page or an error body is normal
+    internet weather. A feed unreadable run after run is a blog that has
+    started refusing us, which is the quietest way to miss a sale.
+    Counting consecutive failures separates the two.
     """
-    if failed:
+    # Drop feeds no longer in FEEDS, or an edit to the list would leave a
+    # stale streak behind that fails every future run.
+    streaks = {f: n for f, n in (state.get("feed_failures") or {}).items() if f in FEEDS}
+    for feed in FEEDS:
+        if feed in failed:
+            streaks[feed] = streaks.get(feed, 0) + 1
+        else:
+            streaks.pop(feed, None)  # one good read clears the streak
+    state["feed_failures"] = streaks
+    return sorted(f for f, n in streaks.items() if n >= FAIL_STREAK)
+
+
+def report_failures(failed: list, broken: list) -> None:
+    """Fail the run only for a feed that is persistently unreadable.
+
+    Exiting non-zero turns a red run and GitHub's failure notification into
+    the signal that a source stopped being watched. Doing that for a single
+    bad read would cry wolf several times a week, so it waits for
+    FAIL_STREAK consecutive misses. State is saved before this runs.
+    """
+    for feed in failed:
+        print(f"warn: unreadable this run: {feed}")
+    if broken:
         raise SystemExit(
-            f"{len(failed)} of {len(FEEDS)} feeds unreadable: {', '.join(failed)}"
+            f"{len(broken)} feed(s) unreadable {FAIL_STREAK} runs in a row: "
+            + ", ".join(broken)
         )
+    if failed:
+        print(f"below the {FAIL_STREAK}-run threshold, not failing the run")
 
 
 def run_diagnosis() -> None:
@@ -300,6 +327,7 @@ def main() -> None:
     # live and stay quiet, so alerts only fire for posts published after it.
     first_run = not SEEN_PATH.exists()
 
+    state = load_state()
     seen = load_seen()
     hits = []
     failed = []
@@ -322,8 +350,9 @@ def main() -> None:
     if first_run:
         save_seen(seen)
         print(f"first run: seeded {len(seen)} item(s), no alert sent")
-        heartbeat(load_state(), new_posts, 0, failed)
-        report_failures(failed)
+        broken = note_failures(state, failed)
+        heartbeat(state, new_posts, 0, failed)
+        report_failures(failed, broken)
         return
 
     if hits:
@@ -340,8 +369,9 @@ def main() -> None:
     else:
         print("no new Delta sale posts")
     save_seen(seen)
-    heartbeat(load_state(), new_posts, len(hits), failed)
-    report_failures(failed)
+    broken = note_failures(state, failed)
+    heartbeat(state, new_posts, len(hits), failed)
+    report_failures(failed, broken)
 
 
 if __name__ == "__main__":

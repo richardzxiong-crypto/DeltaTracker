@@ -35,6 +35,11 @@ stdlib Python only.
   20-24 hours with how many checks ran and posts were scanned. If the
   heartbeat stops, the watch is down: open the Actions tab and look for a
   red run.
+- **A red run means a feed is really gone, not just slow.** Blogs
+  occasionally serve a truncated or non-XML page; one bad read is logged
+  and ignored. A feed unreadable three runs in a row fails the run, which
+  is when GitHub emails you. The heartbeat lists any feed currently on a
+  failing streak.
 - **Are scheduled runs happening?** Runs triggered by the cron are labelled
   with the schedule rather than a person's avatar. GitHub honours only a
   fraction of scheduled slots on shared runners (observed: 2 of 6 in a
@@ -58,6 +63,11 @@ and later runs only email when a post matches both the Delta and the
 sale patterns. The daily heartbeat is the proof it is still looking.
 
 ## ANA business award check (on demand)
+
+The repository has exactly two workflows. **"Delta award sale watch"** is
+the hourly one above, on GitHub's runners. **"ANA award check (on demand)"**
+below is manual and runs on your own machine; it never runs on a schedule,
+so it cannot produce surprise failure mail.
 
 A separate workflow, **"ANA award check (on demand)"**, checks actual award
 *space* rather than blog coverage: business-class awards on ANA-operated
@@ -106,9 +116,14 @@ under the 135k round-trip threshold; one-ways at or under 65k are flagged.
 
 The job log has the same list, and the run's artifact keeps United's raw
 responses and a screenshot of any search that failed. Three failures in a
-row stop the run. **Probe** ticked runs only the first search and prints
-United's raw response shape, for adjusting the parser if United changes
-its site.
+row stop the run.
+
+Two diagnostics share the same button. **Site access** ticked skips the
+search entirely and just reports whether this runner can reach each award
+site, which is the quickest way to confirm a new self-hosted runner works
+(leave the dates blank). **Probe** ticked runs only the first search and
+prints United's raw response shape, for adjusting the parser if United
+changes its site.
 
 ### Without a runner
 
