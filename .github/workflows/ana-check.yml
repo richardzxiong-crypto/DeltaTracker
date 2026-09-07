@@ -59,6 +59,7 @@ jobs:
 
       - name: Test whether this runner can reach the award sites
         if: inputs.site_access
+        timeout-minutes: 10       # a diagnostic must never outlast the job it diagnoses
         run: python probe_sources.py
 
       - name: Check ANA business award space on united.com

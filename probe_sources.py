@@ -63,6 +63,11 @@ def main() -> None:
             browser = pw.chromium.launch(headless=True, args=opts.get("args", []) + ["--disable-blink-features=AutomationControlled"],
                                          channel=opts.get("channel"))
             ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="en-US", timezone_id="America/New_York")
+            # Bound every operation, not just navigation. page.title() takes no
+            # timeout of its own and would otherwise fall back to Playwright's
+            # 30s default on a page whose frame never settles, which is longer
+            # than the navigation timeout and dominated the whole run.
+            ctx.set_default_timeout(5_000)
             for site, home, search in SITES:
                 # A fresh page per site: a navigation that a site kills at the
                 # protocol level can linger and "interrupt" the next goto on
