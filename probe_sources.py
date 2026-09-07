@@ -27,7 +27,11 @@ BLOCK_HINTS = ("access denied", "pardon our interruption", "unusual traffic", "v
 # A site that has not answered in this long is not going to. Kept short
 # because a blocked host tarpits the connection rather than refusing it,
 # and every one of those waits is paid twice, once per browser profile.
-VISIT_TIMEOUT = 20_000
+# Eighteen navigations at this cap is about three minutes, which keeps the
+# all-blocked worst case well inside the step's ten-minute ceiling; a step
+# killed by that ceiling would fail the run and mail the very notification
+# this project just stopped sending.
+VISIT_TIMEOUT = 10_000
 
 
 def visit(page, url: str) -> str:
