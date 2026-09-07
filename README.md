@@ -69,15 +69,15 @@ the hourly one above, on GitHub's runners. **"ANA award check (on demand)"**
 below is manual and runs on your own machine; it never runs on a schedule,
 so it cannot produce surprise failure mail.
 
-A separate workflow, **"ANA award check (on demand)"**, checks actual award
-*space* rather than blog coverage: business-class awards on ANA-operated
-flights between New York and Tokyo / Osaka, one united.com search per date
-in a range you choose. United shows Star Alliance partner space without a
-login, which is the inventory ANA releases to partners, so no account of
-yours is involved and nothing can be locked.
+It checks actual award *space* rather than blog coverage: business-class
+awards on ANA-operated flights between New York and Tokyo / Osaka, one
+united.com search per date in a range you choose. United shows Star
+Alliance partner space without a login, which is the inventory ANA
+releases to partners, so no account of yours is involved and nothing can
+be locked.
 
-**It cannot run on GitHub's own servers.** The "Probe award sites"
-workflow showed why: from a hosted runner, united.com accepts the
+**It cannot run on GitHub's own servers.** The **Site access** tickbox
+showed why: from a hosted runner, united.com accepts the
 connection and never answers, Aeroplan and LifeMiles return 403 Access
 Denied, Copa returns 401. Every no-login award site blocks cloud address
 ranges outright. From a home connection the same sites load normally.
