@@ -52,6 +52,12 @@ SEEN_CAP = 1000  # ~2 weeks of posts at the observed ~70/day
 STATE_PATH = Path(__file__).parent / "state.json"
 HEARTBEAT_EVERY = timedelta(hours=20)  # lands once a day despite cron jitter
 FAIL_STREAK = 3  # consecutive unreadable runs before a feed counts as broken
+# An RSS feed is a window on the newest ~10 posts, not an archive. These
+# blogs publish 8-15 posts a day each and GitHub honours about 5 of the
+# hourly slots, so roughly 5 hours pass between polls and the window turns
+# over in between: posts fall off unseen. Walk back through older pages
+# until one overlaps with posts already recorded.
+FEED_PAGES = 4
 DRILL_PATH = Path(__file__).parent / "tests" / "drill-feed.xml"
 UA = {"User-Agent": "Mozilla/5.0 (delta-watch personal monitor)"}
 
@@ -87,6 +93,13 @@ def fetch_items(url: str):
             pass
         if title and link:
             yield title, link, desc, published
+
+
+def paged(feed: str, page: int) -> str:
+    """The URL for an older page of a feed. WordPress serves ?paged=N."""
+    if page <= 1:
+        return feed
+    return f"{feed}{'&' if '?' in feed else '?'}paged={page}"
 
 
 def age(published) -> str:
@@ -270,11 +283,26 @@ def run_diagnosis() -> None:
     to reject. Use it to answer "what would fire right now, and why?".
     """
     for feed in FEEDS:
-        try:
-            items = list(fetch_items(feed))
-        except Exception as e:
-            print(f"UNREADABLE {feed}: {e}")
-            continue
+        items = []
+        for page in range(1, FEED_PAGES + 1):
+            url = paged(feed, page)
+            try:
+                got = list(fetch_items(url))
+            except Exception as e:
+                print(f"{'UNREADABLE' if page == 1 else 'no older page'} {url}: {e}")
+                break
+            links = {i[1] for i in items}
+            fresh = [i for i in got if i[1] not in links]
+            note = ""
+            if not got:
+                note = "  <- empty, end of the archive"
+            elif not fresh:
+                note = "  <- same posts as an earlier page, this feed ignores ?paged"
+            print(f"  page {page}: {len(got)} item(s), {len(fresh)} not on earlier pages{note}")
+            items += fresh
+            if not got or not fresh:
+                break
+        print(f"{feed}: {len(items)} distinct post(s) across pages")
         for title, link, desc, published in items:
             blob = f"{title} {desc}"
             if not DELTA.search(blob):
@@ -334,15 +362,30 @@ def main() -> None:
     new_posts = 0
     for feed in FEEDS:
         try:
-            for title, link, desc, published in fetch_items(feed):
-                if link in seen:
-                    continue
-                seen[link] = None
-                new_posts += 1
-                reason = why(title, desc)
-                if reason:
-                    print(f"match: {title}\n       {link}\n       {reason}; {age(published)}")
-                    hits.append((title, link))
+            for page in range(1, FEED_PAGES + 1):
+                url = paged(feed, page)
+                try:
+                    items = list(fetch_items(url))
+                except Exception as e:
+                    if page == 1:
+                        raise  # page one failing means the feed is unreadable
+                    print(f"note: older page unavailable, {url}: {e}")
+                    break  # deeper pages are best effort
+                fresh = [i for i in items if i[1] not in seen]
+                for title, link, desc, published in fresh:
+                    seen[link] = None
+                    new_posts += 1
+                    reason = why(title, desc)
+                    if reason:
+                        print(f"match: {title}\n       {link}\n       {reason}; {age(published)}")
+                        hits.append((title, link))
+                if page > 1:
+                    print(f"note: page {page} of {feed} held {len(fresh)} post(s) "
+                          "the newest page had already dropped")
+                # A page with nothing new means this run has caught up with
+                # what was already recorded, so everything older is covered.
+                if not items or len(fresh) < len(items):
+                    break
         except Exception as e:  # one dead feed shouldn't lose the others
             print(f"warn: {feed}: {e}")
             failed.append(feed)
