@@ -33,7 +33,11 @@ FEEDS = [
 # not fire. SkyMiles is Delta's programme, so it counts as a Delta mention.
 DELTA = re.compile(r"\bdelta\b|skymiles", re.I)
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
-PROXIMITY = 60  # fallback: chars either side of a sale phrase to look for Delta
+# Headlines list several unrelated deals in one line: "Last Chance Deals: IHG
+# award sale, Delta Amex Offer, Southwest 2X promo". Punctuation is what
+# separates one programme's offer from the next, so a title counts only when
+# Delta and the sale phrase land in the same piece.
+CLAUSE = re.compile(r"[,;:|•·]|\s[-–—]\s")
 # Buying miles is a different product from an award sale and, at Delta's
 # usual ~2.5c/mile, a bad one under the cents-per-mile rule in the alert.
 BUY = re.compile(r"\bbuy(ing)? (delta )?(skymiles|miles)\b|\b(skymiles|miles) purchase\b", re.I)
@@ -113,22 +117,21 @@ def age(published) -> str:
 def why(title: str, desc: str):
     """Reason a post looks like a Delta award sale, or None.
 
-    A sale phrase in a title that also names Delta is the normal case and
-    is accepted outright. In the body, the sale phrase and the Delta
-    mention must share a sentence, or sit within PROXIMITY characters of
-    each other, which keeps multi-item digests from firing.
+    One rule throughout: the sale phrase and the Delta mention must land
+    in the same clause, where a clause is what punctuation separates in a
+    title, and within a sentence in the body. A counted-characters
+    fallback used to stand behind this and was what let "American flash
+    sale ... In other news, Delta ..." match across the full stop.
     """
     if BUY.search(title):
         return None
-    if DELTA.search(title) and (m := SALE.search(title)):
-        return f"title says {m.group(0)!r}"
+    for clause in CLAUSE.split(title):
+        if DELTA.search(clause) and (m := SALE.search(clause)):
+            return f"title says {m.group(0)!r} about Delta"
     for sentence in SENTENCE.split(desc):
-        if DELTA.search(sentence) and (m := SALE.search(sentence)):
-            return f"body says {m.group(0)!r} in the same sentence as Delta"
-    for m in SALE.finditer(desc):
-        window = desc[max(0, m.start() - PROXIMITY): m.end() + PROXIMITY]
-        if DELTA.search(window):
-            return f"body says {m.group(0)!r} within {PROXIMITY} chars of Delta"
+        for clause in CLAUSE.split(sentence):
+            if DELTA.search(clause) and (m := SALE.search(clause)):
+                return f"body says {m.group(0)!r} about Delta"
     return None
 
 
