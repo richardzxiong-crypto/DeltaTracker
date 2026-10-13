@@ -1,10 +1,7 @@
 {
  "last_heartbeat": "2026-10-13T09:32:07.973194+00:00",
- "runs": 0,
- "posts": 0,
+ "runs": 1,
+ "posts": 26,
  "sales": 0,
- "feed_failures": {
-  "https://thriftytraveler.com/feed/": 2,
-  "https://frequentmiler.com/feed/": 1
- }
+ "feed_failures": {}
 }
