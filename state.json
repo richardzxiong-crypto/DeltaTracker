@@ -1,7 +1,10 @@
 {
  "last_heartbeat": "2026-10-17T05:39:47.107670+00:00",
- "runs": 1,
- "posts": 1,
+ "runs": 2,
+ "posts": 5,
  "sales": 0,
- "feed_failures": {}
+ "feed_failures": {
+  "https://loyaltylobby.com/feed/": 1,
+  "https://upgradedpoints.com/feed/": 1
+ }
 }
