@@ -1,9 +1,7 @@
 {
  "last_heartbeat": "2026-10-23T18:27:20.802437+00:00",
- "runs": 0,
- "posts": 0,
+ "runs": 1,
+ "posts": 16,
  "sales": 0,
- "feed_failures": {
-  "https://loyaltylobby.com/feed/": 1
- }
+ "feed_failures": {}
 }
