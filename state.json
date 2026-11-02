@@ -1,7 +1,9 @@
 {
- "last_heartbeat": "2026-11-01T06:20:52.199141+00:00",
- "runs": 3,
- "posts": 24,
+ "last_heartbeat": "2026-11-02T06:22:25.854818+00:00",
+ "runs": 0,
+ "posts": 0,
  "sales": 0,
- "feed_failures": {}
+ "feed_failures": {
+  "https://upgradedpoints.com/feed/": 1
+ }
 }
