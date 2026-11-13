@@ -1,9 +1,9 @@
 {
  "last_heartbeat": "2026-11-13T09:41:05.725632+00:00",
- "runs": 1,
- "posts": 20,
+ "runs": 2,
+ "posts": 32,
  "sales": 0,
  "feed_failures": {
-  "https://frequentmiler.com/feed/": 1
+  "https://frequentmiler.com/feed/": 2
  }
 }
