@@ -42,6 +42,7 @@ jobs:
           TEST_EMAIL: ${{ inputs.test_email }}
           DRILL: ${{ inputs.drill }}
           DIAGNOSE: ${{ inputs.diagnose }}
+          FEE_WARN_USD: ${{ secrets.FEE_WARN_USD }}
 
       - name: Persist seen items
         if: always()              # commit state even when a check exited non-zero

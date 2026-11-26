@@ -25,6 +25,27 @@ Points", and so on. Deliberately ignored:
 - **Other Virgin brands**: Virgin Hotels, Voyages and Australia run sales
   of their own, so plain "Virgin" is not a mention of Virgin Atlantic.
 
+### Virgin Atlantic: carrier charges and departure city
+
+Virgin Atlantic adds fuel surcharges ("carrier charges") to rewards. In
+Upper Class they come to hundreds of dollars each way, so a sale price in
+points can still lose to paying cash. Every Virgin Atlantic alert adds
+two lines, read from the full post:
+
+- **Taxes/charges quoted**: each amount the post gives in a sentence
+  about taxes or charges, converted to dollars at rough rates. Anything
+  of `FEE_WARN_USD` ($300 by default; set it as a repository secret to
+  change it) or more is flagged **HIGH CHARGES**. When the post quotes
+  none, the alert gives 2026 guide figures for trips from the US: about
+  $165 each way in Economy and about $700 in Upper Class.
+- **Departs**: whether the post mentions New York, US departures, or only
+  UK ones. Head for Points covers many UK-origin sales that are no use
+  from New York. These still alert, labelled, so a sale that runs both
+  ways is never missed.
+
+Judge a deal on what is left after the charges:
+(cash fare − taxes and charges) ÷ points × 100.
+
 To watch another programme, add a line to `PROGRAMS` in `monitor.py`.
 A feed added to `FEEDS` starts silently: its first read records what is
 already there, so it cannot mail a backlog of old sales.

@@ -16,6 +16,7 @@ import urllib.request
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
+from html import unescape
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -86,6 +87,7 @@ FAIL_STREAK = 3  # consecutive unreadable runs before a feed counts as broken
 # until one overlaps with posts already recorded.
 FEED_PAGES = 4
 DRILL_PATH = Path(__file__).parent / "tests" / "drill-feed.xml"
+CONTENT = "{http://purl.org/rss/1.0/modules/content/}encoded"
 UA = {"User-Agent": "Mozilla/5.0 (delta-watch personal monitor)"}
 
 
@@ -103,7 +105,19 @@ def save_seen(seen: dict) -> None:
     SEEN_PATH.write_text(json.dumps(list(seen)[-SEEN_CAP:], indent=0))
 
 
+def plain(html: str) -> str:
+    """Readable text from a feed's HTML: tags dropped, entities decoded."""
+    return re.sub(r"[ \t]+", " ", unescape(re.sub(r"<[^>]+>", " ", html)))
+
+
 def fetch_items(url: str):
+    """(title, link, desc, published, body) for each post in a feed.
+
+    desc is the short excerpt the matcher reads. body is the whole post
+    where the feed carries it (WordPress's content:encoded), else the
+    excerpt: the taxes and departure cities a reward sale quotes sit
+    further down than any excerpt reaches.
+    """
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=30) as r:
         root = ET.fromstring(r.read())
@@ -111,6 +125,7 @@ def fetch_items(url: str):
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
         desc = (item.findtext("description") or "")[:500]
+        body = plain(item.findtext(CONTENT) or item.findtext("description") or "")
         published = None
         try:
             published = parsedate_to_datetime(item.findtext("pubDate") or "")
@@ -119,7 +134,7 @@ def fetch_items(url: str):
         except (TypeError, ValueError):
             pass
         if title and link:
-            yield title, link, desc, published
+            yield title, link, desc, published, body
 
 
 def paged(feed: str, page: int) -> str:
@@ -193,6 +208,103 @@ def why(title: str, desc: str):
     return None
 
 
+# Virgin Atlantic passes fuel surcharges ("carrier charges") on to rewards,
+# and in Upper Class they run to hundreds of dollars each way: a sale price
+# in points can still lose to cash once those are paid. The post usually
+# quotes them, so the alert lifts every money amount from a sentence about
+# taxes or charges, converted to dollars at rough rates.
+FEE_WORDS = re.compile(r"\btax|\bfees?\b|surcharge|carrier[- ]imposed|"
+                       r"carrier charge|\bcharges\b|\bapd\b|\byq\b", re.I)
+MONEY = re.compile(r"([$£€])\s?(\d[\d,]*(?:\.\d{1,2})?)|"
+                   r"\b(\d[\d,]*(?:\.\d{1,2})?)\s?(usd|gbp|eur)\b", re.I)
+FARE_WORDS = re.compile(r"\bfares?\b|\bcash\b|\bticket price|\bpaid\b|\bcosts?\b|\bprice[ds]?\b", re.I)
+TO_USD = {"$": 1.0, "usd": 1.0, "£": 1.3, "gbp": 1.3, "€": 1.1, "eur": 1.1}
+CUR = {"usd": "$", "gbp": "£", "eur": "€"}
+# Above this, in dollars, a quoted charge gets a warning in the alert. Virgin
+# Economy rewards from the US run about $165 each way in 2026 and Upper Class
+# about $700, so this sits between them.
+FEE_WARN_USD = float(os.environ.get("FEE_WARN_USD") or "300")
+
+# Where the sale departs from decides whether it is any use from New York:
+# Head for Points covers UK-origin reward sales that a New Yorker can't use.
+NYC = re.compile(r"\b(new york|nyc|jfk|newark|ewr)\b", re.I)
+US_CITIES = (r"boston|washington|miami|orlando|atlanta|los angeles|san francisco|"
+             r"seattle|las vegas|tampa")
+US_DEPART = re.compile(
+    r"\b(us|u\.s\.|usa|american|north american)[- ](departures?|gateways?|originating|origin)\b|"
+    rf"\b(from|departing|ex|leaving) (the )?(us|u\.s\.|usa|united states|america|{US_CITIES})\b",
+    re.I)
+UK_DEPART = re.compile(
+    r"\b(uk|british)[- ](departures?|originating|origin)\b|"
+    r"\b(from|departing|ex|leaving) (the )?(uk|london|heathrow|manchester|edinburgh|glasgow|belfast)\b",
+    re.I)
+
+
+def fees_in(text: str) -> list:
+    """[(as written, approx USD)] for each money amount in a sentence that is
+    about taxes or charges, largest first."""
+    found = {}
+    for sentence in SENTENCE.split(text):
+        if not FEE_WORDS.search(sentence):
+            continue
+        for m in MONEY.finditer(sentence):
+            # "Taxes are £120 and the cash fare is $3,200": an amount counts
+            # only when a charge word sits just before it (with no fare word
+            # in between) or just after it ("£518 in taxes"), and not when a
+            # fare word introduces it ("fares from £449 including taxes").
+            before = sentence[max(0, m.start() - 60):m.start()]
+            after = sentence[m.end():m.end() + 30]
+            if FARE_WORDS.search(sentence[max(0, m.start() - 15):m.start()]):
+                continue
+            if re.match(r"\s*(annual|yearly|membership)", after, re.I):
+                continue  # a credit card's fee, not a ticket's
+            if not FEE_WORDS.search(after):
+                last = None
+                for last in FEE_WORDS.finditer(before):
+                    pass
+                if not last or FARE_WORDS.search(before[last.end():]):
+                    continue
+            sym = m.group(1) or CUR[m.group(4).lower()]
+            num = m.group(2) or m.group(3)
+            amount = float(num.replace(",", ""))
+            if amount < 5 or amount > 5000:
+                continue  # a stray "$1" or a cash fare, not a charge
+            found[f"{sym}{num}"] = amount * TO_USD[sym]
+    return sorted(found.items(), key=lambda kv: -kv[1])
+
+
+def departures(text: str) -> str:
+    """Which side of the Atlantic the post says the sale departs from."""
+    nyc, us, uk = NYC.search(text), US_DEPART.search(text), UK_DEPART.search(text)
+    if us or nyc:
+        where = "mentions New York" if nyc else "mentions US departures"
+        return where + (" (UK departures too, check which side the sale is)" if uk else "")
+    if uk:
+        return "UK departures only, as far as the post says: likely no use from New York"
+    return "departure city not stated, check the post"
+
+
+def notes_for(progs: list, text: str) -> list:
+    """Extra alert lines for a matched post: Virgin Atlantic's carrier
+    charges and where its sale departs from."""
+    if "Virgin Atlantic" not in progs:
+        return []
+    fees = fees_in(text)
+    if fees:
+        top = fees[0][1]
+        shown = ", ".join(w if w.startswith("$") else f"{w} (~${usd:,.0f})"
+                          for w, usd in fees[:4])
+        line = f"Taxes/charges quoted: {shown}"
+        if top >= FEE_WARN_USD:
+            line = (f"HIGH CHARGES, up to ~${top:,.0f}. Take them off the cash fare "
+                    "before judging the deal. " + line)
+    else:
+        line = ("Taxes/charges not quoted in the post. Check before booking: "
+                "from the US they ran ~$165 each way in Economy and ~$700 in "
+                "Upper Class in 2026.")
+    return [line, f"Departs: {departures(text)}"]
+
+
 def matches(title: str, desc: str) -> bool:
     return why(title, desc) is not None
 
@@ -219,16 +331,21 @@ def _send(subject: str, body: str) -> None:
 
 PROFILE_REMINDER = (
     "\nReminder: NYC profile is JFK/LGA to Europe/Asia/South America, "
-    "Main Cabin or better. Price any deal in cents per mile or point "
-    "(cash fare / miles x 100; 1.2+ good, 1.5+ book it)."
+    "Main Cabin or better. Price any deal in cents per mile or point: "
+    "(cash fare - award taxes and charges) / miles x 100; 1.2+ good, "
+    "1.5+ book it. Charges come off the top, so $700 of them on a $2,000 "
+    "fare leaves 80k points worth 1.6c, not 2.5c."
 )
 PROGRAM_TIPS = {
     "Delta": "Delta flash sales usually last ~72 hours: "
              "delta.com/us/en/flight-deals/flash-sale.",
     "Virgin Atlantic": "Virgin Atlantic reward sales usually run a few days: "
-                       "virginatlantic.com, Book with points. Virgin-operated "
-                       "rewards add taxes and carrier charges, steep in Upper "
-                       "Class, so price the cash part too.",
+                       "virginatlantic.com, Book with points. From New York "
+                       "Virgin flies to London Heathrow and Manchester; "
+                       "anywhere further connects in London. Carrier "
+                       "charges are lowest in Economy and starting in the "
+                       "US: a trip that starts in London adds UK Air "
+                       "Passenger Duty on top, so one-ways home cost more.",
 }
 
 
@@ -239,8 +356,9 @@ def send_email(hits: list) -> None:
     for name in names:
         group = [h for h in hits if name in h[2]]
         lines.append(f"{name} ({len(group)}):")
-        for title, link, _ in group:
+        for title, link, _, notes in group:
             lines.append(f"- {title}\n  {link}")
+            lines += [f"  {n}" for n in notes]
         lines.append("")
     lines.append(PROFILE_REMINDER.strip())
     lines += [PROGRAM_TIPS[name] for name in names if name in PROGRAM_TIPS]
@@ -381,7 +499,7 @@ def run_diagnosis() -> None:
             if not got or not fresh:
                 break
         print(f"{feed}: {len(items)} distinct post(s) across pages")
-        for title, link, desc, published in items:
+        for title, link, desc, published, body in items:
             blob = f"{title} {desc}"
             if not MENTION.search(blob):
                 continue
@@ -395,6 +513,10 @@ def run_diagnosis() -> None:
                 tag = "quiet     "
                 reason = "no sale phrase"
             print(f"[{tag}] {title}\n             {link}\n             {reason}; {age(published)}")
+            # The charge and departure lines an alert would carry, shown for
+            # every Virgin post so the extraction can be checked on live text.
+            for n in notes_for(programs_in(blob, blob), f"{title}. {body}"):
+                print(f"             {n}")
 
 
 def run_drill() -> None:
@@ -405,8 +527,8 @@ def run_drill() -> None:
     waiting for a sale or disturbing the baseline.
     """
     hits = [
-        (title, link, found[0])
-        for title, link, desc, _ in fetch_items(DRILL_PATH.as_uri())
+        (title, link, found[0], notes_for(found[0], f"{title}. {body}"))
+        for title, link, desc, _, body in fetch_items(DRILL_PATH.as_uri())
         if (found := why(title, desc))
     ]
     if not hits:
@@ -467,15 +589,17 @@ def main() -> None:
                     print(f"note: older page unavailable, {url}: {e}")
                     break  # deeper pages are best effort
                 fresh = [i for i in items if i[1] not in seen]
-                for title, link, desc, published in fresh:
+                for title, link, desc, published, body in fresh:
                     seen[link] = None
                     new_posts += 1
                     if baseline:
                         continue  # recorded as already known, never alerted
                     found = why(title, desc)
                     if found:
-                        print(f"match: {title}\n       {link}\n       {found[1]}; {age(published)}")
-                        hits.append((title, link, found[0]))
+                        notes = notes_for(found[0], f"{title}. {body}")
+                        print(f"match: {title}\n       {link}\n       {found[1]}; {age(published)}"
+                              + "".join(f"\n       {n}" for n in notes))
+                        hits.append((title, link, found[0], notes))
                 if page > 1:
                     print(f"note: page {page} of {feed} held {len(fresh)} post(s) "
                           "the newest page had already dropped")
@@ -506,7 +630,7 @@ def main() -> None:
         except Exception:
             # Alert never went out — un-see those posts so the next run retries
             # instead of silently swallowing the sale.
-            for _, link, _ in hits:
+            for _, link, _, _ in hits:
                 seen.pop(link, None)
             save_seen(seen)
             raise
