@@ -1,9 +1,9 @@
-"""Delta SkyMiles flash-sale monitor.
+"""Award-sale monitor for Delta SkyMiles and Virgin Atlantic Flying Club.
 
 Polls the RSS feeds of the major award-deal blogs, looks for new posts
-about Delta award/flash sales, and emails an alert for anything unseen.
-Stdlib only — no pip installs. State lives in seen.json (committed back
-to the repo by the GitHub Actions workflow).
+about award or reward sales in any watched programme, and emails one
+combined alert for anything unseen. Stdlib only — no pip installs. State
+lives in seen.json and state.json (committed back by the workflow).
 """
 
 import json
@@ -25,34 +25,57 @@ FEEDS = [
     "https://loyaltylobby.com/feed/",
     "https://onemileatatime.com/feed/",
     "https://upgradedpoints.com/feed/",
+    # UK-based, and the most thorough on Virgin Atlantic reward sales.
+    "https://www.headforpoints.com/feed/",
 ]
 
-# A post matches if it mentions Delta AND looks like an award sale, with
-# the two close together: newsletter digests mention Delta in one blurb and
-# "30k miles round-trip" about another airline in the next, and that must
-# not fire. SkyMiles is Delta's programme, so it counts as a Delta mention.
-DELTA = re.compile(r"\bdelta\b|skymiles", re.I)
+# The programmes watched, each as (name in the alert, mention, exclusion).
+# A post matches when one clause names a programme AND looks like an award
+# sale: newsletter digests name one programme in a blurb and "30k miles
+# round-trip" about another in the next, and that must not fire.
+# "Virgin" alone is not a mention of Virgin Atlantic: Virgin Hotels, Voyages
+# and Australia run sales of their own (a Virgin Hotels award sale is already
+# among the posts recorded), so those count only with "Virgin Atlantic" named.
+PROGRAMS = [
+    ("Delta", re.compile(r"\bdelta\b|skymiles", re.I), None),
+    ("Virgin Atlantic",
+     re.compile(r"\bvirgin atlantic\b|\bflying club\b|\bvirgin points\b", re.I),
+     re.compile(r"^(?!.*virgin atlantic).*\bvirgin (hotels?|voyages|australia)\b", re.I | re.S)),
+]
+MENTION = re.compile("|".join(f"(?:{m.pattern})" for _, m, _ in PROGRAMS), re.I)
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 # Headlines list several unrelated deals in one line: "Last Chance Deals: IHG
 # award sale, Delta Amex Offer, Southwest 2X promo". Punctuation is what
 # separates one programme's offer from the next, so a title counts only when
 # Delta and the sale phrase land in the same piece.
 CLAUSE = re.compile(r"[,;:|•·]|\s[-–—]\s")
-# Buying miles is a different product from an award sale and, at Delta's
-# usual ~2.5c/mile, a bad one under the cents-per-mile rule in the alert.
-BUY = re.compile(r"\bbuy(ing)? (delta )?(skymiles|miles)\b|\b(skymiles|miles) purchase\b", re.I)
+# Buying miles or points is a different product from an award sale and, at
+# the usual ~2.5c each, a bad one under the cents-per-mile rule in the alert.
+BUY = re.compile(
+    r"\bbuy(ing)? (delta |virgin )?(skymiles|miles|points|virgin points)\b|"
+    r"\b(skymiles|miles|points) purchase\b", re.I)
+# Delta calls them awards and Virgin calls them rewards, so most phrases take
+# either word.
 SALE = re.compile(
-    r"flash sale|award sale|award flash|skymiles award|"
-    r"skymiles (sale|deal|flash|discount)|award (deal|discount)|"
-    r"discounted (award|skymiles)|"
-    r"award (price|rate)s? (drop|cut)|(drops?|cuts?) award (price|rate)|"
-    r"miles? round-?trip|"
-    r"\b(from|as low as|as little as)( just| only)? [\d,]+k? (skymiles|miles)\b",
+    r"flash sale|(award|reward) sale|(award|reward) flash|skymiles award|"
+    r"reward seats? sale|half[- ]price rewards?|\b\d{1,2}% off (award|reward)s?\b|"
+    r"skymiles (sale|deal|flash|discount)|(award|reward) (deal|discount)|"
+    r"discounted (award|reward|skymiles)|"
+    r"(award|reward) (price|rate)s? (drop|cut)|(drops?|cuts?) (award|reward) (price|rate)|"
+    r"\b(miles?|points?) round-?trip|"
+    r"\b(from|as low as|as little as)( just| only)? [\d,.]+k? (skymiles|miles|virgin points|points)\b",
     re.I,
 )
+# Airlines run cash fare sales far more often than award sales, and the
+# blogs call both a flash sale. A money price with no award word anywhere in
+# the headline is a cash sale, not the mileage deal this watch is for.
+CASH = re.compile(r"[$£€]\s?\d|\b(usd|gbp|eur)\s?\d", re.I)
+AWARDISH = re.compile(r"award|reward|points?\b|miles\b|skymiles|avios", re.I)
 
 SEEN_PATH = Path(__file__).parent / "seen.json"
-SEEN_CAP = 1000  # ~2 weeks of posts at the observed ~70/day
+# Reading four pages of six feeds records about 100 posts a day, and a
+# post that ages out of here while still on a feed page reads as new again.
+SEEN_CAP = 3000
 STATE_PATH = Path(__file__).parent / "state.json"
 HEARTBEAT_EVERY = timedelta(hours=20)  # lands once a day despite cron jitter
 FAIL_STREAK = 3  # consecutive unreadable runs before a feed counts as broken
@@ -114,24 +137,59 @@ def age(published) -> str:
     return f"published {mins // 60}h {mins % 60:02d}m ago"
 
 
-def why(title: str, desc: str):
-    """Reason a post looks like a Delta award sale, or None.
+def programs_in(text: str, context: str = "") -> list:
+    """Names of the watched programmes this text mentions.
 
-    One rule throughout: the sale phrase and the Delta mention must land
-    in the same clause, where a clause is what punctuation separates in a
-    title, and within a sentence in the body. A counted-characters
+    The exclusion is checked against the wider context too: in "Virgin
+    Voyages flash sale: cabins from 40k Virgin Points" the clause holding
+    the mention does not say Voyages, but the headline does.
+    """
+    return [name for name, mention, exclude in PROGRAMS
+            if mention.search(text)
+            and not (exclude and exclude.search(f"{context} {text}"))]
+
+
+def label_programs(title: str) -> list:
+    """Programmes named by a headline's leading label, as in "Virgin Atlantic:
+    New York to London from 20k points", where the colon that separates a
+    digest's items also separates the programme from its own deal.
+
+    Only a label that is nothing but a programme name counts: "Delta
+    roundup: Iberia award sale" must not lend Delta to Iberia's sale.
+    """
+    label, sep, _ = title.partition(":")
+    if not sep:
+        return []
+    rest = MENTION.sub("", label)
+    if re.sub(r"[\s'’s]+", "", rest):
+        return []
+    return programs_in(label, title)
+
+
+def why(title: str, desc: str):
+    """(programmes, reason) when a post looks like an award sale, else None.
+
+    One rule throughout: the sale phrase and the programme mention must
+    land in the same clause, where a clause is what punctuation separates
+    in a title, and within a sentence in the body. A counted-characters
     fallback used to stand behind this and was what let "American flash
     sale ... In other news, Delta ..." match across the full stop.
     """
     if BUY.search(title):
         return None
-    for clause in CLAUSE.split(title):
-        if DELTA.search(clause) and (m := SALE.search(clause)):
-            return f"title says {m.group(0)!r} about Delta"
-    for sentence in SENTENCE.split(desc):
-        for clause in CLAUSE.split(sentence):
-            if DELTA.search(clause) and (m := SALE.search(clause)):
-                return f"body says {m.group(0)!r} about Delta"
+    lent = label_programs(title)
+    for where, text in [("title", title)] + [("body", s) for s in SENTENCE.split(desc)]:
+        for i, clause in enumerate(CLAUSE.split(text)):
+            progs = programs_in(clause, f"{title} {text}")
+            if where == "title" and i == 1:  # the first piece after the label
+                progs = [n for n, _, _ in PROGRAMS if n in progs or n in lent]
+            m = SALE.search(clause) if progs else None
+            if not m:
+                continue
+            if (CASH.search(title) or CASH.search(text)) and not (
+                    AWARDISH.search(title) or AWARDISH.search(text)):
+                continue  # a fare sale priced in money
+            return progs, f"{where} says {m.group(0)!r} about {' and '.join(progs)}"
     return None
 
 
@@ -161,20 +219,35 @@ def _send(subject: str, body: str) -> None:
 
 PROFILE_REMINDER = (
     "\nReminder: NYC profile is JFK/LGA to Europe/Asia/South America, "
-    "Main Cabin or better. Flash sales usually last ~72 hours \u2014 check "
-    "delta.com/us/en/flight-deals/flash-sale and price it in cents per "
-    "mile (cash / miles x 100; 1.2+ good, 1.5+ book it)."
+    "Main Cabin or better. Price any deal in cents per mile or point "
+    "(cash fare / miles x 100; 1.2+ good, 1.5+ book it)."
 )
+PROGRAM_TIPS = {
+    "Delta": "Delta flash sales usually last ~72 hours: "
+             "delta.com/us/en/flight-deals/flash-sale.",
+    "Virgin Atlantic": "Virgin Atlantic reward sales usually run a few days: "
+                       "virginatlantic.com, Book with points. Virgin-operated "
+                       "rewards add taxes and carrier charges, steep in Upper "
+                       "Class, so price the cash part too.",
+}
 
 
 def send_email(hits: list) -> None:
+    """One email for every programme, grouped by programme."""
+    names = [name for name, _, _ in PROGRAMS if any(name in h[2] for h in hits)]
+    lines = ["New award-sale coverage spotted:\n"]
+    for name in names:
+        group = [h for h in hits if name in h[2]]
+        lines.append(f"{name} ({len(group)}):")
+        for title, link, _ in group:
+            lines.append(f"- {title}\n  {link}")
+        lines.append("")
+    lines.append(PROFILE_REMINDER.strip())
+    lines += [PROGRAM_TIPS[name] for name in names if name in PROGRAM_TIPS]
     n = len(hits)
-    lines = ["New Delta award-sale coverage spotted:\n"]
-    for title, link in hits:
-        lines.append(f"- {title}\n  {link}\n")
-    lines.append(PROFILE_REMINDER)
     _send(
-        f"Delta award sale alert: {n} new post{'s' if n > 1 else ''}",
+        f"Award sale alert: {' + '.join(names)} "
+        f"({n} new post{'s' if n > 1 else ''})",
         "\n".join(lines),
     )
 
@@ -183,8 +256,9 @@ def send_test_email() -> None:
     """Exercise the SMTP path on demand, so the credentials can be proven
     without waiting for a real sale to appear in the feeds."""
     _send(
-        "Delta award sale watch: test alert",
-        "This is a test from your Delta award sale watch.\n\n"
+        "Award sale watch: test alert",
+        "This is a test from your award sale watch "
+        f"({', '.join(name for name, _, _ in PROGRAMS)}).\n\n"
         "If you are reading this, the SMTP credentials work and a real "
         "alert will reach you the same way.\n" + PROFILE_REMINDER,
     )
@@ -224,13 +298,14 @@ def heartbeat(state: dict, new_posts: int, sales: int, failed: list) -> None:
             f"{urlsplit(f).netloc or f} x{n}" for f, n in sorted(streaks.items())) + ")"
     n = state["sales"]
     _send(
-        "Delta award sale watch: daily heartbeat, "
+        "Award sale watch: daily heartbeat, "
         + (f"{n} sale alert(s) sent" if n else "no sale yet"),
         f"The watch is alive as of {now:%Y-%m-%d %H:%M} UTC.\n\n"
         f"Since the last heartbeat: {state['runs']} check(s), "
-        f"{state['posts']} new post(s) scanned, {n} Delta award sale(s) found.\n"
+        f"{state['posts']} new post(s) scanned, {n} award sale(s) found.\n"
+        f"Watching: {', '.join(name for name, _, _ in PROGRAMS)}.\n"
         f"Feeds: {feeds}.\n\n"
-        "A matching post triggers a separate 'Delta award sale alert' email "
+        "A matching post triggers a separate 'Award sale alert' email "
         "immediately. If this heartbeat stops arriving, the watch is down.",
     )
     state.update(last_heartbeat=now.isoformat(), runs=0, posts=0, sales=0)
@@ -278,12 +353,12 @@ def report_failures(failed: list, broken: list) -> None:
 
 
 def run_diagnosis() -> None:
-    """Print how every live post that mentions Delta looks to the matcher.
+    """Print how every live post naming a watched programme looks to the matcher.
 
     Reads the feeds, ignores seen.json, sends nothing and saves nothing.
     A post tagged loose-only has a sale phrase somewhere in its text but
-    not near a Delta mention: the digest case the proximity rule exists
-    to reject. Use it to answer "what would fire right now, and why?".
+    not in the same clause as the programme: the digest case the clause
+    rule exists to reject. Use it to answer "what would fire right now?".
     """
     for feed in FEEDS:
         items = []
@@ -308,14 +383,14 @@ def run_diagnosis() -> None:
         print(f"{feed}: {len(items)} distinct post(s) across pages")
         for title, link, desc, published in items:
             blob = f"{title} {desc}"
-            if not DELTA.search(blob):
+            if not MENTION.search(blob):
                 continue
-            reason = why(title, desc)
-            if reason:
-                tag = "ALERT     "
+            found = why(title, desc)
+            if found:
+                tag, reason = "ALERT     ", found[1]
             elif SALE.search(blob):
                 tag = "loose-only"
-                reason = "sale phrase present but not near a Delta mention"
+                reason = "sale phrase present, not in the same clause as the programme"
             else:
                 tag = "quiet     "
                 reason = "no sale phrase"
@@ -330,14 +405,29 @@ def run_drill() -> None:
     waiting for a sale or disturbing the baseline.
     """
     hits = [
-        (title, link)
+        (title, link, found[0])
         for title, link, desc, _ in fetch_items(DRILL_PATH.as_uri())
-        if matches(title, desc)
+        if (found := why(title, desc))
     ]
     if not hits:
         raise SystemExit("drill failed: fixture sale post did not match")
     print(f"drill: {len(hits)} fixture post(s) matched, sending a real alert")
     send_email(hits)
+
+
+def seeded_feeds(state: dict, seen: dict) -> set:
+    """Feeds whose posts have been recorded before, so alerts from them are news.
+
+    A feed added to FEEDS later arrives with every post it carries unseen,
+    and reading it for the first time would mail a backlog of old sales.
+    Its first read is a silent baseline, as the very first run is. The list
+    lives in state.json; when that has none yet, a feed counts as seeded if
+    any recorded post is on its site.
+    """
+    if "feeds_seeded" in state:
+        return set(state["feeds_seeded"])
+    hosts = {urlsplit(u).netloc for u in seen}
+    return {f for f in FEEDS if urlsplit(f).netloc in hosts}
 
 
 def main() -> None:
@@ -360,10 +450,12 @@ def main() -> None:
 
     state = load_state()
     seen = load_seen()
+    seeded = set() if first_run else seeded_feeds(state, seen)
     hits = []
     failed = []
     new_posts = 0
     for feed in FEEDS:
+        baseline = first_run or feed not in seeded
         try:
             for page in range(1, FEED_PAGES + 1):
                 url = paged(feed, page)
@@ -378,10 +470,12 @@ def main() -> None:
                 for title, link, desc, published in fresh:
                     seen[link] = None
                     new_posts += 1
-                    reason = why(title, desc)
-                    if reason:
-                        print(f"match: {title}\n       {link}\n       {reason}; {age(published)}")
-                        hits.append((title, link))
+                    if baseline:
+                        continue  # recorded as already known, never alerted
+                    found = why(title, desc)
+                    if found:
+                        print(f"match: {title}\n       {link}\n       {found[1]}; {age(published)}")
+                        hits.append((title, link, found[0]))
                 if page > 1:
                     print(f"note: page {page} of {feed} held {len(fresh)} post(s) "
                           "the newest page had already dropped")
@@ -389,9 +483,13 @@ def main() -> None:
                 # what was already recorded, so everything older is covered.
                 if not items or len(fresh) < len(items):
                     break
+            if baseline and not first_run:
+                print(f"new feed {feed}: its current posts recorded as a baseline, no alerts from them")
+            seeded.add(feed)
         except Exception as e:  # one dead feed shouldn't lose the others
             print(f"warn: {feed}: {e}")
             failed.append(feed)
+    state["feeds_seeded"] = sorted(f for f in seeded if f in FEEDS)
 
     if first_run:
         save_seen(seen)
@@ -402,18 +500,18 @@ def main() -> None:
         return
 
     if hits:
-        print(f"{len(hits)} new Delta sale post(s) — sending alert")
+        print(f"{len(hits)} new award sale post(s) — sending alert")
         try:
             send_email(hits)
         except Exception:
             # Alert never went out — un-see those posts so the next run retries
             # instead of silently swallowing the sale.
-            for _, link in hits:
+            for _, link, _ in hits:
                 seen.pop(link, None)
             save_seen(seen)
             raise
     else:
-        print("no new Delta sale posts")
+        print("no new award sale posts")
     save_seen(seen)
     broken = note_failures(state, failed)
     heartbeat(state, new_posts, len(hits), failed)

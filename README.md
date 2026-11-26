@@ -1,11 +1,33 @@
-# Delta Award Sale Watch
+# Award Sale Watch: Delta + Virgin Atlantic
 
 Emails you within a few hours whenever the major award-travel blogs
 (Thrifty Traveler, Frequent Miler, Loyalty Lobby, One Mile at a Time,
-Upgraded Points) publish coverage of a new Delta SkyMiles award or
-flash sale, and sends a short daily heartbeat so you can tell "nothing
-to report" apart from "not running". Runs free on GitHub Actions,
-stdlib Python only.
+Upgraded Points, Head for Points) publish coverage of a new Delta
+SkyMiles award sale or Virgin Atlantic Flying Club reward sale. Both
+programmes go into one combined alert email, grouped by programme, and a
+short daily heartbeat lets you tell "nothing to report" apart from "not
+running". Runs free on GitHub Actions, stdlib Python only.
+
+## What counts as a sale
+
+A post alerts when one clause of its headline (or one sentence of its
+summary) names a watched programme *and* reads as an award sale: "award
+sale", "reward sale", "flash sale", "50% off rewards", "from 47.5k Virgin
+Points", and so on. Deliberately ignored:
+
+- **Digests** that list several programmes' offers in one line, such as
+  "Last Chance Deals: IHG award sale, Delta Amex offer".
+- **Buying miles or points**, which is a different product and usually
+  poor value at ~2.5c each.
+- **Cash fare sales**, priced in dollars or pounds with no award wording.
+  Airlines run these far more often than award sales and the blogs call
+  both a "flash sale".
+- **Other Virgin brands**: Virgin Hotels, Voyages and Australia run sales
+  of their own, so plain "Virgin" is not a mention of Virgin Atlantic.
+
+To watch another programme, add a line to `PROGRAMS` in `monitor.py`.
+A feed added to `FEEDS` starts silently: its first read records what is
+already there, so it cannot mail a backlog of old sales.
 
 ## Setup (~10 minutes)
 
@@ -19,15 +41,15 @@ stdlib Python only.
    - `SMTP_PASS` — the 16-character app password
    - `ALERT_TO` — where alerts go (can be the same address, or a
      carrier email-to-SMS gateway if you want texts)
-5. Test it: Actions tab > "Delta award sale watch" > Run workflow.
+5. Test it: Actions tab > "Award sale watch (Delta + Virgin Atlantic)" > Run workflow.
    First run seeds `seen.json` with current posts; alerts fire only
    for posts published after that.
 
 ## Verifying it works
 
-- **Did a run succeed?** Actions tab > "Delta award sale watch". A green
+- **Did a run succeed?** Actions tab > "Award sale watch (Delta + Virgin Atlantic)". A green
   check is a clean run. The "Check feeds and alert" step prints either
-  `no new Delta sale posts` or how many alerts it sent.
+  `no new award sale posts` or how many alerts it sent.
 - **Is the state persisting?** `seen.json` should exist at the repo root,
   with `chore: update seen items` commits from `delta-watch-bot` as the
   feeds churn.
@@ -54,17 +76,18 @@ stdlib Python only.
 - **Why did (or didn't) a post alert?** Every match is logged with its
   reason. To see how the matcher views everything currently live, run
   the workflow with **"Print which live posts would alert and why"**
-  ticked: it lists each post mentioning Delta as ALERT, quiet, or
-  loose-only (a sale phrase present but not near a Delta mention, the
-  digest case that is deliberately rejected). Sends and saves nothing.
+  ticked: it lists each post naming a watched programme as ALERT, quiet,
+  or loose-only (a sale phrase present but not in the same clause as the
+  programme, the digest case that is deliberately rejected), and shows
+  how many posts each page of each feed returned. Sends and saves nothing.
 
 Quiet inboxes are the normal state: the baseline run is silent by design,
-and later runs only email when a post matches both the Delta and the
-sale patterns. The daily heartbeat is the proof it is still looking.
+and later runs only email when a post names a watched programme and
+reads as an award sale. The daily heartbeat is the proof it is still looking.
 
 ## ANA business award check (on demand)
 
-The repository has exactly two workflows. **"Delta award sale watch"** is
+The repository has exactly two workflows. **"Award sale watch (Delta + Virgin Atlantic)"** is
 the hourly one above, on GitHub's runners. **"ANA award check (on demand)"**
 below is manual and runs on your own machine; it never runs on a schedule,
 so it cannot produce surprise failure mail.

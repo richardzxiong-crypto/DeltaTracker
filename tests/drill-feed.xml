@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Fixture for the on-demand alert drill (DRILL=true). Item one must match
-     and alert; item two must be filtered out. Not fetched by normal runs. -->
+<!-- Fixture for the on-demand alert drill (DRILL=true). The Delta and Virgin Atlantic
+     items must alert, in one email; the Virgin Hotels and United items must not. Not fetched by normal runs. -->
 <rss version="2.0"><channel>
   <title>Delta watch drill feed</title>
   <item>
     <title>DRILL (not a real sale) - Delta SkyMiles Award Flash Sale to Europe</title>
     <link>https://example.invalid/delta-watch-drill</link>
     <description>Drill fixture standing in for a genuine Delta award flash sale post.</description>
+  </item>
+  <item>
+    <title>DRILL (not a real sale) - Virgin Atlantic Reward Sale: Upper Class from 47.5k Virgin Points</title>
+    <link>https://example.invalid/virgin-watch-drill</link>
+    <description>Drill fixture standing in for a genuine Virgin Atlantic reward sale post.</description>
+  </item>
+  <item>
+    <title>DRILL - Virgin Hotels award sale: nights from 20k points</title>
+    <link>https://example.invalid/virgin-hotels-should-be-ignored</link>
+    <description>Must not alert: Virgin Hotels is not Virgin Atlantic.</description>
   </item>
   <item>
     <title>DRILL - United devalues its award chart</title>
