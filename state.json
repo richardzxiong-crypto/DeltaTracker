@@ -1,7 +1,15 @@
 {
- "last_heartbeat": "2026-11-25T19:24:35.082917+00:00",
- "runs": 2,
- "posts": 8,
+ "last_heartbeat": "2026-11-26T22:25:02.171236+00:00",
+ "runs": 0,
+ "posts": 0,
  "sales": 0,
- "feed_failures": {}
+ "feed_failures": {},
+ "feeds_seeded": [
+  "https://frequentmiler.com/feed/",
+  "https://loyaltylobby.com/feed/",
+  "https://onemileatatime.com/feed/",
+  "https://thriftytraveler.com/feed/",
+  "https://upgradedpoints.com/feed/",
+  "https://www.headforpoints.com/feed/"
+ ]
 }
