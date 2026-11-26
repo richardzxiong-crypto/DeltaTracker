@@ -215,8 +215,8 @@ def why(title: str, desc: str):
 # taxes or charges, converted to dollars at rough rates.
 FEE_WORDS = re.compile(r"\btax|\bfees?\b|surcharge|carrier[- ]imposed|"
                        r"carrier charge|\bcharges\b|\bapd\b|\byq\b", re.I)
-MONEY = re.compile(r"([$£€])\s?(\d[\d,]*(?:\.\d{1,2})?)|"
-                   r"\b(\d[\d,]*(?:\.\d{1,2})?)\s?(usd|gbp|eur)\b", re.I)
+AMOUNT = r"(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)"
+MONEY = re.compile(rf"([$£€])\s?{AMOUNT}|\b{AMOUNT}\s?(usd|gbp|eur)\b", re.I)
 FARE_WORDS = re.compile(r"\bfares?\b|\bcash\b|\bticket price|\bpaid\b|\bcosts?\b|\bprice[ds]?\b", re.I)
 TO_USD = {"$": 1.0, "usd": 1.0, "£": 1.3, "gbp": 1.3, "€": 1.1, "eur": 1.1}
 CUR = {"usd": "$", "gbp": "£", "eur": "€"}
@@ -267,7 +267,7 @@ def fees_in(text: str) -> list:
             sym = m.group(1) or CUR[m.group(4).lower()]
             num = m.group(2) or m.group(3)
             amount = float(num.replace(",", ""))
-            if amount < 5 or amount > 5000:
+            if amount < 5 or amount > 2500:
                 continue  # a stray "$1" or a cash fare, not a charge
             found[f"{sym}{num}"] = amount * TO_USD[sym]
     return sorted(found.items(), key=lambda kv: -kv[1])
